@@ -1,25 +1,8 @@
 ﻿import * as vscode from "vscode";
 import { MiniMaxClient, type ChatOptions } from "../api/MiniMaxClient";
 import { MiniMaxError } from "../api/MiniMaxError";
-import { MiniMaxAuthentication } from "./MiniMaxAuthentication";
-import { MiniMaxErrorMapper } from "./ErrorMapper";
-import { TokenCounter } from "../utils/TokenCounter";
 import { getModelById, resolveModelIdForApi } from "../api/types";
-import {
-  getThinkingPartCtor,
-  getLatestReasoningUpdate,
-  reportReasoning,
-  InlineThinkingParser,
-} from "../utils/ThinkingHelper";
 import { convertMessages } from "../utils/MessageConverter";
-import {
-  convertTools,
-  resolveToolChoice,
-  accumulateToolCalls,
-  isToolCallFinish,
-  reportToolCalls,
-  type AccumulatedToolCall,
-} from "../utils/ToolConverter";
 import {
   getApiBaseUrl,
   modelsWithApiKey,
@@ -27,6 +10,23 @@ import {
   resolveTemperature,
   resolveTopP,
 } from "../utils/ModelConfig";
+import {
+  getLatestReasoningUpdate,
+  getThinkingPartCtor,
+  InlineThinkingParser,
+  reportReasoning,
+} from "../utils/ThinkingHelper";
+import { TokenCounter } from "../utils/TokenCounter";
+import {
+  accumulateToolCalls,
+  convertTools,
+  isToolCallFinish,
+  reportToolCalls,
+  resolveToolChoice,
+  type AccumulatedToolCall,
+} from "../utils/ToolConverter";
+import { MiniMaxErrorMapper } from "./ErrorMapper";
+import { MiniMaxAuthentication } from "./MiniMaxAuthentication";
 
 type PrepareOptionsWithConfiguration = vscode.PrepareLanguageModelChatModelOptions & {
   configuration?: Record<string, unknown>;
@@ -42,7 +42,7 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
     private readonly apiClient: MiniMaxClient,
     private readonly authManager: MiniMaxAuthentication,
     private readonly tokenCounter: TokenCounter,
-  ) {}
+  ) { }
 
   notifyModelsChanged(): void {
     this.modelsChangedEmitter.fire();
@@ -233,4 +233,3 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
     return normalized.length > 0 ? normalized : undefined;
   }
 }
-

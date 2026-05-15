@@ -29,16 +29,36 @@ export function modelsWithApiKey(): vscode.LanguageModelChatInformation[] {
         name: model.name,
         detail: "Token Plan",
         tooltip: `${model.name} -- in ${model.maxInputTokens.toLocaleString()} / out ${model.maxOutputTokens.toLocaleString()} max tokens (context up to ${model.contextLength.toLocaleString()})`,
-        family: model.id,
-        version: "1.0",
+        family: "minimax",
+        version: getModelVersion(model.id),
         maxInputTokens: model.maxInputTokens,
         maxOutputTokens: model.maxOutputTokens,
+        isUserSelectable: true,
         capabilities: {
           toolCalling: true,
           imageInput: false,
         },
-      }) satisfies vscode.LanguageModelChatInformation,
+      }) as vscode.LanguageModelChatInformation,
   );
+}
+
+function getModelVersion(modelId: ModelInfo["id"]): string {
+  switch (modelId) {
+    case "MiniMax-M2.7":
+      return "2.7";
+    case "MiniMax-M2.7-highspeed":
+      return "2.7-highspeed";
+    case "MiniMax-M2.5":
+      return "2.5";
+    case "MiniMax-M2.5-highspeed":
+      return "2.5-highspeed";
+    case "MiniMax-M2.1":
+      return "2.1";
+    case "MiniMax-M2.1-highspeed":
+      return "2.1-highspeed";
+    case "MiniMax-M2":
+      return "2";
+  }
 }
 
 function getVisibleModels(): readonly ModelInfo[] {
