@@ -6,6 +6,7 @@ import type {
   MiniMaxToolCall,
   MiniMaxToolMessage,
   MiniMaxChatContent,
+  MiniMaxUserContentPart,
 } from "../api/types";
 import { isThinkingPart, toReasoningDetail } from "./ThinkingPartDetector";
 import { readNonEmptyString } from "./ThinkingHelper";
@@ -123,7 +124,41 @@ function toMiniMaxUserAndToolMessages(
 }
 
 function buildUserMessageContent(parts: readonly unknown[]): MiniMaxChatContent {
-  return concatTextParts(parts);
+  const hasMedia = parts.some((part) => part instanceof vscode.LanguageModelDataPart);
+
+  if (!hasMedia) {
+    return concatTextParts(parts);
+  }
+
+  const contentParts: MiniMaxUserContentPart[] = [];
+  for (const part of parts) {
+    if (part instanceof vscode.LanguageModelTextPart) {
+      const text = part.value;
+      if (text.length > 0) {
+        contentParts.push({ type: "text", text });
+      }
+    } else if (part instanceof vscode.LanguageModelDataPart) {
+      if (isImageMimeType(part.mimeType)) {
+        const base64 = Buffer.from(part.data).toString("base64");
+        const dataUrl = `data:${part.mimeType};base64,${base64}`;
+        contentParts.push({
+          type: "image_url",
+          image_url: { url: dataUrl },
+        });
+      }
+    }
+  }
+
+  return contentParts.length > 0 ? contentParts : "";
+}
+
+function isImageMimeType(mimeType: string): boolean {
+  return [
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+  ].includes(mimeType);
 }
 
 function concatTextParts(parts: readonly unknown[]): string {
