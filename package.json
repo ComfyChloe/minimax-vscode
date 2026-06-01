@@ -37,7 +37,8 @@
     "onLanguageModelChatProvider:minimax"
   ],
   "enabledApiProposals": [
-    "languageModelThinkingPart"
+    "languageModelThinkingPart",
+    "languageModelDataPart"
   ],
   "contributes": {
     "commands": [
@@ -64,6 +65,7 @@
           "items": {
             "type": "string",
             "enum": [
+              "MiniMax-M3",
               "MiniMax-M2.7",
               "MiniMax-M2.7-highspeed",
               "MiniMax-M2.5",
@@ -74,6 +76,7 @@
             ]
           },
           "default": [
+            "MiniMax-M3",
             "MiniMax-M2.7",
             "MiniMax-M2.7-highspeed",
             "MiniMax-M2.5",

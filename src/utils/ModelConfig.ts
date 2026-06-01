@@ -36,7 +36,7 @@ export function modelsWithApiKey(): vscode.LanguageModelChatInformation[] {
         isUserSelectable: true,
         capabilities: {
           toolCalling: true,
-          imageInput: false,
+          imageInput: model.id === "MiniMax-M3",
         },
       }) as vscode.LanguageModelChatInformation,
   );
@@ -44,6 +44,8 @@ export function modelsWithApiKey(): vscode.LanguageModelChatInformation[] {
 
 function getModelVersion(modelId: ModelInfo["id"]): string {
   switch (modelId) {
+    case "MiniMax-M3":
+      return "3";
     case "MiniMax-M2.7":
       return "2.7";
     case "MiniMax-M2.7-highspeed":
