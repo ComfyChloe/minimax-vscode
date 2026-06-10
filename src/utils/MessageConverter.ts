@@ -177,7 +177,9 @@ function concatToolResultContent(parts: readonly unknown[]): string {
     if (part instanceof vscode.LanguageModelTextPart) {
       text += part.value;
     } else if (part instanceof vscode.LanguageModelDataPart) {
-      text += `[data:${part.mimeType};base64,${Buffer.from(part.data).toString("base64")}]`;
+      if (part.mimeType !== "cache_control") {
+        text += `[data:${part.mimeType};base64,${Buffer.from(part.data).toString("base64")}]`;
+      }
     } else if (
       part &&
       typeof part === "object" &&
