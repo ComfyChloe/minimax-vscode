@@ -7,6 +7,7 @@ Language model chat provider for GitHub Copilot in VS Code using MiniMax text mo
 - Token Plan API key from [platform.minimax.io](https://platform.minimax.io)
 - OpenAI-compatible chat to `https://api.minimax.io/v1`
 - Tool calling and reasoning/thinking streaming
+- M3 model supports image input (multimodal)
 
 ## Requirements
 
@@ -28,15 +29,16 @@ Keys are stored in VS Code Secret Storage.
 
 ## Models
 
-| Model | Context | Max output |
-|--------|---------|-----------|
-| MiniMax-M2.7 | 204,800 | 128,000 |
-| MiniMax-M2.7-highspeed | 204,800 | 128,000 |
-| MiniMax-M2.5 | 204,800 | 128,000 |
-| MiniMax-M2.5-highspeed | 204,800 | 128,000 |
-| MiniMax-M2.1 | 204,800 | 128,000 |
-| MiniMax-M2.1-highspeed | 204,800 | 128,000 |
-| MiniMax-M2 | 204,800 | 128,000 |
+| Model | Context | Max input | Max output |
+|--------|---------|-----------|-----------|
+| MiniMax-M3 | 512,000 | 500,000 | 131,072 |
+| MiniMax-M2.7 | 204,800 | 200,000 | 131,072 |
+| MiniMax-M2.7-highspeed | 204,800 | 200,000 | 131,072 |
+| MiniMax-M2.5 | 204,800 | 196,000 | 128,000 |
+| MiniMax-M2.5-highspeed | 204,800 | 196,000 | 128,000 |
+| MiniMax-M2.1 | 204,800 | 196,000 | 128,000 |
+| MiniMax-M2.1-highspeed | 204,800 | 196,000 | 128,000 |
+| MiniMax-M2 | 204,800 | 192,000 | 128,000 |
 
 ## License
 
