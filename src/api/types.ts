@@ -88,21 +88,20 @@ export interface ModelInfo {
 
 export const DEFAULT_MODEL_ID: ModelId = "MiniMax-M3";
 
-const CTX_512K = 512_000;
-const CTX_205K = 205_000;
-const CTX_200K = 200_000;
+const CTX_1M = 1_000_000;
+const CTX_204K = 204_800;
 const OUT_131K = 131_072;
 const OUT_128K = 128_000;
 
 export const SUPPORTED_MODELS: readonly ModelInfo[] = [
-  { id: "MiniMax-M3", name: "MiniMax M3", contextLength: CTX_512K, maxInputTokens: 500_000, maxOutputTokens: OUT_131K },
-  { id: "MiniMax-M2.7", name: "MiniMax M2.7", contextLength: CTX_205K, maxInputTokens: 200_000, maxOutputTokens: OUT_131K },
-  { id: "MiniMax-M2.7-highspeed", name: "MiniMax M2.7 (High-Speed)", contextLength: CTX_205K, maxInputTokens: 200_000, maxOutputTokens: OUT_131K },
-  { id: "MiniMax-M2.5", name: "MiniMax M2.5", contextLength: CTX_200K, maxInputTokens: 196_000, maxOutputTokens: OUT_128K },
-  { id: "MiniMax-M2.5-highspeed", name: "MiniMax M2.5 (High-Speed)", contextLength: CTX_200K, maxInputTokens: 196_000, maxOutputTokens: OUT_128K },
-  { id: "MiniMax-M2.1", name: "MiniMax M2.1", contextLength: CTX_200K, maxInputTokens: 196_000, maxOutputTokens: OUT_128K },
-  { id: "MiniMax-M2.1-highspeed", name: "MiniMax M2.1 (High-Speed)", contextLength: CTX_200K, maxInputTokens: 196_000, maxOutputTokens: OUT_128K },
-  { id: "MiniMax-M2", name: "MiniMax M2", contextLength: CTX_200K, maxInputTokens: 192_000, maxOutputTokens: OUT_128K },
+  { id: "MiniMax-M3", name: "MiniMax M3", contextLength: CTX_1M, maxInputTokens: 1_000_000, maxOutputTokens: OUT_131K },
+  { id: "MiniMax-M2.7", name: "MiniMax M2.7", contextLength: CTX_204K, maxInputTokens: 200_000, maxOutputTokens: OUT_131K },
+  { id: "MiniMax-M2.7-highspeed", name: "MiniMax M2.7 (High-Speed)", contextLength: CTX_204K, maxInputTokens: 200_000, maxOutputTokens: OUT_131K },
+  { id: "MiniMax-M2.5", name: "MiniMax M2.5", contextLength: CTX_204K, maxInputTokens: 196_000, maxOutputTokens: OUT_128K },
+  { id: "MiniMax-M2.5-highspeed", name: "MiniMax M2.5 (High-Speed)", contextLength: CTX_204K, maxInputTokens: 196_000, maxOutputTokens: OUT_128K },
+  { id: "MiniMax-M2.1", name: "MiniMax M2.1", contextLength: CTX_204K, maxInputTokens: 196_000, maxOutputTokens: OUT_128K },
+  { id: "MiniMax-M2.1-highspeed", name: "MiniMax M2.1 (High-Speed)", contextLength: CTX_204K, maxInputTokens: 196_000, maxOutputTokens: OUT_128K },
+  { id: "MiniMax-M2", name: "MiniMax M2", contextLength: CTX_204K, maxInputTokens: 192_000, maxOutputTokens: OUT_128K },
 ];
 
 const MODEL_BY_ID: Readonly<Record<ModelId, ModelInfo>> = Object.fromEntries(

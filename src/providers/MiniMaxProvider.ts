@@ -37,6 +37,7 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
   readonly onDidChangeLanguageModelChatInformation = this.modelsChangedEmitter.event;
 
   private readonly modelApiKeys = new Map<string, string>();
+  private lastPromptTokens = 0;
 
   constructor(
     private readonly apiClient: MiniMaxClient,
@@ -212,6 +213,10 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
           reportToolCalls(progress, pendingToolCalls);
           toolCallsEmitted = true;
         }
+      }
+      
+      if (chunk.usage?.prompt_tokens) {
+        this.lastPromptTokens = chunk.usage.prompt_tokens;
       }
     }
   }
