@@ -65,6 +65,7 @@ export class MiniMaxClient {
       }
       (params as ChatCompletionCreateParamsStreaming & { extra_body?: { reasoning_split?: boolean } }).extra_body =
         { reasoning_split: options?.reasoningSplit ?? true };
+      params.stream_options = { include_usage: true };
 
       const stream = (await client.chat.completions.create(params, {
         signal: abortController.signal,
