@@ -31,7 +31,7 @@ Keys are stored in VS Code Secret Storage.
 
 | Model | Context | Max input | Max output |
 |--------|---------|-----------|-----------|
-| MiniMax-M3 | 512,000 | 500,000 | 131,072 |
+| MiniMax-M3 | 1,000,000 | 1,000,000 | 131,072 |
 | MiniMax-M2.7 | 204,800 | 200,000 | 131,072 |
 | MiniMax-M2.7-highspeed | 204,800 | 200,000 | 131,072 |
 | MiniMax-M2.5 | 204,800 | 196,000 | 128,000 |
