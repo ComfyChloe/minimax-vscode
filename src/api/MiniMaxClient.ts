@@ -20,6 +20,7 @@ export interface ChatOptions {
   tools?: MiniMaxToolDefinition[];
   toolChoice?: "auto" | "required";
   reasoningSplit?: boolean;
+  thinkingEnabled?: boolean;
 }
 
 export class MiniMaxClient {
@@ -63,8 +64,14 @@ export class MiniMaxClient {
         (params as ChatCompletionCreateParamsStreaming & { tool_choice?: "auto" | "required" }).tool_choice =
           options.toolChoice;
       }
-      (params as ChatCompletionCreateParamsStreaming & { extra_body?: { reasoning_split?: boolean } }).extra_body =
-        { reasoning_split: options?.reasoningSplit ?? true };
+      (params as ChatCompletionCreateParamsStreaming & {
+        extra_body?: { reasoning_split?: boolean; thinking?: { type: "disabled" | "adaptive" } };
+      }).extra_body = {
+        reasoning_split: options?.reasoningSplit ?? true,
+        ...(options?.thinkingEnabled === false
+          ? { thinking: { type: "disabled" as const } }
+          : {}),
+      };
       params.stream_options = { include_usage: true };
 
       const stream = (await client.chat.completions.create(params, {

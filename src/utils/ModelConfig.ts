@@ -8,8 +8,15 @@ import {
 export const CONFIG_SECTION = "minimax";
 export const VISIBLE_MODELS_KEY = "visibleModels";
 export const API_BASE_URL_KEY = "apiBaseUrl";
+export const THINKING_ENABLED_KEY = "thinkingEnabled";
 export const DEFAULT_TEMPERATURE = 1;
 export const DEFAULT_MAX_TOKENS = 8192;
+
+export function isThinkingEnabled(): boolean {
+  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+  const value = config.get<unknown>(THINKING_ENABLED_KEY);
+  return value !== false; // default to true
+}
 
 export function getApiBaseUrl(): string | undefined {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);

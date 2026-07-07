@@ -5,6 +5,7 @@ import { getModelById, resolveModelIdForApi } from "../api/types";
 import { convertMessages } from "../utils/MessageConverter";
 import {
   getApiBaseUrl,
+  isThinkingEnabled,
   modelsWithApiKey,
   resolveMaxTokens,
   resolveTemperature,
@@ -37,7 +38,6 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
   readonly onDidChangeLanguageModelChatInformation = this.modelsChangedEmitter.event;
 
   private readonly modelApiKeys = new Map<string, string>();
-  private lastPromptTokens = 0;
 
   constructor(
     private readonly apiClient: MiniMaxClient,
@@ -47,6 +47,10 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
 
   notifyModelsChanged(): void {
     this.modelsChangedEmitter.fire();
+  }
+
+  clearApiKeyCache(): void {
+    this.modelApiKeys.clear();
   }
 
   async provideLanguageModelChatInformation(
@@ -154,6 +158,7 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
       tools,
       toolChoice: resolveToolChoice(options, tools),
       reasoningSplit: true,
+      thinkingEnabled: isThinkingEnabled(),
     };
     const topP = resolveTopP(options);
     if (topP !== undefined) {
@@ -228,9 +233,6 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
         }
       }
       
-      if (chunk.usage?.prompt_tokens) {
-        this.lastPromptTokens = chunk.usage.prompt_tokens;
-      }
     }
 
     // Flush any content buffered while waiting for a possible stray </think>.

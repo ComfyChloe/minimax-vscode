@@ -2,7 +2,7 @@
   "name": "minimax-vscode",
   "displayName": "MiniMax (coding)",
   "description": "Language model provider for GitHub Copilot in VS Code: use MiniMax text models for programming with a Token Plan API key. Does not add speech, video, or image generation APIs.",
-  "version": "1.4.5",
+  "version": "1.4.6",
   "publisher": "denizhandaklr",
   "license": "MIT",
   "icon": "icon/icon.png",
@@ -25,7 +25,11 @@
   "keywords": [
     "ai",
     "minimax",
+    "minimax m3",
     "minimax m2.7",
+    "minimax m2.5",
+    "minimax m2.1",
+    "minimax m2",
     "token plan",
     "language model",
     "github copilot",
@@ -48,6 +52,10 @@
       {
         "command": "minimax.switchToChina",
         "title": "MiniMax: Switch to Chinese API (minimaxi.com)"
+      },
+      {
+        "command": "minimax.clearApiKey",
+        "title": "MiniMax: Clear Stored API Key"
       }
     ],
     "configuration": {
@@ -87,6 +95,12 @@
           "uniqueItems": true,
           "scope": "application",
           "markdownDescription": "Programming text models (M2 / M2.1 / M2.5 / M2.7) for Token Plan. Order matches [MiniMax M2.7 for AI coding](https://platform.minimax.io/docs/guides/text-ai-coding-tools). Role-play (M2-her) is not included."
+        },
+        "minimax.thinkingEnabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "markdownDescription": "Enable thinking/reasoning output. Setting this to `false` sends `thinking: {\"type\": \"disabled\"}` for M3 (faster, no reasoning tokens). M2.x models always emit thinking regardless of this setting."
         }
       }
     },

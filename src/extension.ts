@@ -43,6 +43,12 @@ export function activate(context: vscode.ExtensionContext): void {
           vscode.window.showInformationMessage("MiniMax: Switched to Chinese API (api.minimaxi.com)");
         });
     }),
+    vscode.commands.registerCommand("minimax.clearApiKey", async () => {
+      await authManager.deleteApiKey();
+      provider.clearApiKeyCache();
+      provider.notifyModelsChanged();
+      vscode.window.showInformationMessage("MiniMax: API key cleared. Pick a model to set a new one.");
+    }),
   );
 }
 
