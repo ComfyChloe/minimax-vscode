@@ -1,4 +1,5 @@
 ﻿import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import { MiniMaxError } from "./MiniMaxError";
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -23,7 +24,7 @@ export function toMiniMaxError(error: unknown): MiniMaxError {
     return error;
   }
 
-  if (error instanceof OpenAI.APIError) {
+  if (error instanceof OpenAI.APIError || error instanceof Anthropic.APIError) {
     const statusCode = error.status ?? 0;
     const minimaxCode = extractCode(error);
     const message = getMessageForCode(minimaxCode, statusCode, error.message);
@@ -31,8 +32,11 @@ export function toMiniMaxError(error: unknown): MiniMaxError {
     return new MiniMaxError(message, code, statusCode);
   }
 
-  if (error instanceof Error && error.name === "AbortError") {
-    return new MiniMaxError("Request timeout", "TIMEOUT");
+  if (
+    error instanceof Error &&
+    (error.name === "AbortError" || error.name === "APIUserAbortError")
+  ) {
+    return new MiniMaxError("Request aborted", "TIMEOUT");
   }
 
   if (error instanceof Error) {

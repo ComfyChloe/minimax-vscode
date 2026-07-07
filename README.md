@@ -25,7 +25,23 @@ Keys are stored in VS Code Secret Storage.
 
 ## Configuration
 
-`minimax.visibleModels` (array of model IDs) controls which models appear in the picker.
+The API endpoint (SDK) and thinking mode can be set three ways:
+
+- **Chat UI**: in the Copilot model picker, choose *Manage Language Models…* → MiniMax; the flow asks for the API key, the API endpoint (OpenAI or Anthropic SDK), and the thinking toggle.
+- **Commands**: `MiniMax: Select API Endpoint (OpenAI / Anthropic SDK)` and `MiniMax: Toggle Thinking (M3)`. Every change shows a confirmation message.
+- **Settings**: the `minimax.*` settings below.
+
+The model picker shows which SDK is active (e.g. `Token Plan · Anthropic SDK`).
+
+| Setting | Default | Description |
+|---|---|---|
+| `minimax.apiFormat` | `openai-compat` | API protocol: `openai-compat` (default) or `anthropic-compat` (recommended per MiniMax docs; enables `count_tokens` and native thinking blocks). |
+| `minimax.apiBaseUrl` | `https://api.minimax.io/v1` | OpenAI-compatible base URL. Use `https://api.minimaxi.com/v1` for users in China. |
+| `minimax.anthropicBaseUrl` | `https://api.minimax.io/anthropic` | Anthropic-compatible base URL. Use `https://api.minimaxi.com/anthropic` for users in China. Ignored when `apiFormat` is `openai-compat`. |
+| `minimax.thinkingEnabled` | `true` | Sends `thinking: {type: "adaptive"}` (on) or `{type: "disabled"}` (off) for M3. M2.x always emits thinking. |
+| `minimax.visibleModels` | all | Array of model IDs to show in the picker. |
+
+The `MiniMax: Switch to Global/Chinese API` commands update both the OpenAI and Anthropic base URLs.
 
 ## Models
 
