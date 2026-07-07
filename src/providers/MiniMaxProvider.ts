@@ -143,6 +143,7 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
     const inlineParser = new InlineThinkingParser();
     const pendingToolCalls = new Map<number, AccumulatedToolCall>();
     let toolCallsEmitted = false;
+    let pendingTrailingContent = "";
     const tools = convertTools(options.tools);
 
     const chatOptions: ChatOptions = {
@@ -204,7 +205,19 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
             }
           }
           if (cleaned) {
-            progress.report(new vscode.LanguageModelTextPart(cleaned));
+            // Buffer trailing content briefly so a </think> that arrives in a later chunk
+            // can be paired with this text and discarded before the user sees it.
+            const combined = pendingTrailingContent + cleaned;
+            const strayClose = combined.indexOf("</think>");
+            if (strayClose !== -1) {
+              const safe = combined.slice(0, strayClose);
+              if (safe) {
+                progress.report(new vscode.LanguageModelTextPart(safe));
+              }
+              pendingTrailingContent = "";
+            } else {
+              pendingTrailingContent = combined;
+            }
           }
         }
 
@@ -218,6 +231,12 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
       if (chunk.usage?.prompt_tokens) {
         this.lastPromptTokens = chunk.usage.prompt_tokens;
       }
+    }
+
+    // Flush any content buffered while waiting for a possible stray </think>.
+    if (pendingTrailingContent) {
+      progress.report(new vscode.LanguageModelTextPart(pendingTrailingContent));
+      pendingTrailingContent = "";
     }
   }
 
