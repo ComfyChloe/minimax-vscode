@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { MiniMaxProvider } from "./providers/MiniMaxProvider";
 import { MiniMaxAuthentication } from "./providers/MiniMaxAuthentication";
 import { TokenCounter } from "./utils/TokenCounter";
+import { registerGenerateCommitMessageCommand } from "./commands/generateCommitMessage";
 import {
   CONFIG_SECTION,
   VISIBLE_MODELS_KEY,
@@ -155,6 +156,7 @@ export function activate(context: vscode.ExtensionContext): void {
       provider.notifyModelsChanged();
       vscode.window.showInformationMessage("MiniMax: API key cleared. Pick a model to set a new one.");
     }),
+    registerGenerateCommitMessageCommand(),
   );
 }
 

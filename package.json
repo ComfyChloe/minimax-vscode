@@ -64,8 +64,23 @@
       {
         "command": "minimax.toggleThinking",
         "title": "MiniMax: Toggle Thinking (M3)"
+      },
+      {
+        "command": "minimax.generateCommitMessage",
+        "title": "MiniMax: Generate Commit Message",
+        "icon": "$(sparkle)",
+        "category": "MiniMax"
       }
     ],
+    "menus": {
+      "scm/input": [
+        {
+          "command": "minimax.generateCommitMessage",
+          "group": "inline",
+          "when": "scmProvider == git && config.minimax.commitMessageGeneration.enabled"
+        }
+      ]
+    },
     "configuration": {
       "title": "MiniMax",
       "properties": {
@@ -94,6 +109,12 @@
           "default": "https://api.minimax.io/anthropic",
           "scope": "application",
           "markdownDescription": "Anthropic-compatible API base URL. Use `https://api.minimax.io/anthropic` for international users or `https://api.minimaxi.com/anthropic` for users in China. Ignored when `minimax.apiFormat` is `openai-compat`."
+        },
+        "minimax.commitMessageGeneration.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "markdownDescription": "Show the MiniMax sparkle on the SCM commit-message input. Disable to remove the inline button without uninstalling the extension."
         },
         "minimax.visibleModels": {
           "type": "array",
