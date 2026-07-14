@@ -2,7 +2,7 @@
   "name": "minimax-vscode",
   "displayName": "MiniMax (coding)",
   "description": "Language model provider for GitHub Copilot in VS Code: use MiniMax text models for programming with a Token Plan API key. Does not add speech, video, or image generation APIs.",
-  "version": "1.5.3",
+  "version": "1.5.4",
   "publisher": "denizhandaklr",
   "license": "MIT",
   "icon": "icon/icon.png",
@@ -73,10 +73,10 @@
       }
     ],
     "menus": {
-      "scm/input": [
+      "scm/title": [
         {
           "command": "minimax.generateCommitMessage",
-          "group": "inline",
+          "group": "navigation",
           "when": "scmProvider == git && config.minimax.commitMessageGeneration.enabled"
         }
       ]
@@ -114,7 +114,7 @@
           "type": "boolean",
           "default": true,
           "scope": "application",
-          "markdownDescription": "Show the MiniMax sparkle on the SCM commit-message input. Disable to remove the inline button without uninstalling the extension."
+          "markdownDescription": "Show the MiniMax sparkle in the Source Control view's title toolbar. Disable to remove the button without uninstalling the extension."
         },
         "minimax.visibleModels": {
           "type": "array",

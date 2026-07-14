@@ -14,26 +14,54 @@ interface GitSnapshot {
   truncated: boolean;
 }
 
-export function registerGenerateCommitMessageCommand(): vscode.Disposable {
-  return vscode.commands.registerCommand(COMMAND_ID, async () => {
-    try {
-      await runGenerateCommitMessage();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message) {
-        void vscode.window.showErrorMessage(
-          `MiniMax: commit message generation failed — ${message}`,
-        );
-      }
-    }
-  });
+/** Minimal slice of the built-in `vscode.git` extension API we depend on. */
+interface GitInputBox {
+  value: string;
+}
+interface GitRepository {
+  readonly rootUri: vscode.Uri;
+  readonly inputBox: GitInputBox;
+}
+interface GitApi {
+  readonly repositories: GitRepository[];
+}
+interface GitExtension {
+  getAPI(version: 1): GitApi;
 }
 
-async function runGenerateCommitMessage(): Promise<void> {
+export function registerGenerateCommitMessageCommand(): vscode.Disposable {
+  return vscode.commands.registerCommand(
+    COMMAND_ID,
+    async (sourceControl?: vscode.SourceControl) => {
+      try {
+        await runGenerateCommitMessage(sourceControl);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message) {
+          void vscode.window.showErrorMessage(
+            `MiniMax: commit message generation failed — ${message}`,
+          );
+        }
+      }
+    },
+  );
+}
+
+async function runGenerateCommitMessage(
+  sourceControl?: vscode.SourceControl,
+): Promise<void> {
   const workspaceRoot = pickWorkspaceRoot();
   if (!workspaceRoot) {
     void vscode.window.showErrorMessage(
       "MiniMax: open a workspace with a Git repository to generate a commit message.",
+    );
+    return;
+  }
+
+  const inputBox = await resolveScmInputBox(sourceControl, workspaceRoot);
+  if (!inputBox) {
+    void vscode.window.showErrorMessage(
+      "MiniMax: no SCM input is active. Open the Source Control view on a Git repository and try again.",
     );
     return;
   }
@@ -67,7 +95,15 @@ async function runGenerateCommitMessage(): Promise<void> {
             return;
           }
           accumulated += chunk;
-          applyToInputBox(accumulated);
+          try {
+            inputBox.value = stripLeadingNoise(accumulated);
+          } catch (uiError) {
+            const detail = uiError instanceof Error ? uiError.message : String(uiError);
+            void vscode.window.showErrorMessage(
+              `MiniMax: failed to write to the SCM input box — ${detail}`,
+            );
+            return;
+          }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -83,6 +119,47 @@ function pickWorkspaceRoot(): string | undefined {
     return undefined;
   }
   return folders[0].uri.fsPath;
+}
+
+/**
+ * Resolve a writable SCM input box. When invoked from the `scm/inputBox` menu
+ * button, VS Code passes the owning `SourceControl`. From the command palette
+ * there is no argument, so fall back to the built-in Git extension's repository
+ * input box (the removed `vscode.scm.inputBox` global is no longer available).
+ */
+async function resolveScmInputBox(
+  sourceControl: vscode.SourceControl | undefined,
+  workspaceRoot: string,
+): Promise<{ value: string } | undefined> {
+  if (sourceControl?.inputBox) {
+    return sourceControl.inputBox;
+  }
+  const gitApi = await getGitApi();
+  const repos = gitApi?.repositories ?? [];
+  if (repos.length === 0) {
+    return undefined;
+  }
+  const target = normalizePath(workspaceRoot);
+  const match = repos.find((repo) => normalizePath(repo.rootUri.fsPath) === target);
+  return (match ?? repos[0]).inputBox;
+}
+
+async function getGitApi(): Promise<GitApi | undefined> {
+  try {
+    const extension = vscode.extensions.getExtension<GitExtension>("vscode.git");
+    if (!extension) {
+      return undefined;
+    }
+    const exports = extension.isActive ? extension.exports : await extension.activate();
+    return exports?.getAPI(1);
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizePath(value: string): string {
+  const normalized = value.replace(/[\\/]+$/, "");
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 async function collectGitSnapshot(root: string): Promise<GitSnapshot> {
@@ -162,10 +239,6 @@ function buildMessages(snapshot: GitSnapshot): vscode.LanguageModelChatMessage[]
     .filter((part) => part.length > 0)
     .join("\n\n");
   return [vscode.LanguageModelChatMessage.User(userContent)];
-}
-
-function applyToInputBox(message: string): void {
-  vscode.scm.inputBox.value = stripLeadingNoise(message);
 }
 
 function stripLeadingNoise(text: string): string {
