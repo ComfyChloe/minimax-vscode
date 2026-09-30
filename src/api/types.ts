@@ -65,6 +65,7 @@ export interface MiniMaxToolDefinition {
 }
 
 export const MODEL_IDS = [
+  "MiniMax-M3.1-Flash-Preview",
   "MiniMax-M3",
   "MiniMax-M2.7",
   "MiniMax-M2.7-highspeed",
@@ -94,6 +95,13 @@ const OUT_131K = 131_072;
 const OUT_128K = 128_000;
 
 export const SUPPORTED_MODELS: readonly ModelInfo[] = [
+  {
+    id: "MiniMax-M3.1-Flash-Preview",
+    name: "MiniMax M3.1 Flash Preview",
+    contextLength: CTX_1M,
+    maxInputTokens: 1_000_000,
+    maxOutputTokens: OUT_131K,
+  },
   { id: "MiniMax-M3", name: "MiniMax M3", contextLength: CTX_1M, maxInputTokens: 1_000_000, maxOutputTokens: OUT_131K },
   { id: "MiniMax-M2.7", name: "MiniMax M2.7", contextLength: CTX_204K, maxInputTokens: 200_000, maxOutputTokens: OUT_131K },
   { id: "MiniMax-M2.7-highspeed", name: "MiniMax M2.7 (High-Speed)", contextLength: CTX_204K, maxInputTokens: 200_000, maxOutputTokens: OUT_131K },

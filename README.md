@@ -7,7 +7,7 @@ Language model chat provider for GitHub Copilot in VS Code using MiniMax text mo
 - Token Plan API key from [platform.minimax.io](https://platform.minimax.io)
 - OpenAI-compatible chat to `https://api.minimax.io/v1`
 - Tool calling and reasoning/thinking streaming
-- M3 model supports image input (multimodal)
+- M3.1 Flash Preview and M3 support image input (multimodal)
 - AI-generated SCM commit messages from your staged diff (Conventional Commits)
 
 ## Requirements
@@ -39,7 +39,7 @@ The model picker shows which SDK is active (e.g. `Token Plan · Anthropic SDK`).
 | `minimax.apiFormat` | `openai-compat` | API protocol: `openai-compat` (default) or `anthropic-compat` (recommended per MiniMax docs; enables `count_tokens` and native thinking blocks). |
 | `minimax.apiBaseUrl` | `https://api.minimax.io/v1` | OpenAI-compatible base URL. Use `https://api.minimaxi.com/v1` for users in China. |
 | `minimax.anthropicBaseUrl` | `https://api.minimax.io/anthropic` | Anthropic-compatible base URL. Use `https://api.minimaxi.com/anthropic` for users in China. Ignored when `apiFormat` is `openai-compat`. |
-| `minimax.thinkingEnabled` | `true` | Sends `thinking: {type: "adaptive"}` (on) or `{type: "disabled"}` (off) for M3. M2.x always emits thinking. |
+| `minimax.thinkingEnabled` | `true` | Sends `thinking: {type: "adaptive"}` (on) or `{type: "disabled"}` (off) for M3. M3.1 Flash Preview and M2.x always emit thinking. |
 | `minimax.visibleModels` | all | Array of model IDs to show in the picker. |
 | `minimax.commitMessageGeneration.enabled` | `true` | Show the MiniMax sparkle on the SCM commit-message input. Disable to hide the inline button without uninstalling the extension. |
 
@@ -68,6 +68,7 @@ The command reads `git diff --cached` plus `git status --short`, sends the resul
 
 | Model | Context | Max input | Max output |
 |--------|---------|-----------|-----------|
+| MiniMax-M3.1-Flash-Preview | 1,000,000 | 1,000,000 | 131,072 |
 | MiniMax-M3 | 1,000,000 | 1,000,000 | 131,072 |
 | MiniMax-M2.7 | 204,800 | 200,000 | 131,072 |
 | MiniMax-M2.7-highspeed | 204,800 | 200,000 | 131,072 |
@@ -76,6 +77,8 @@ The command reads `git diff --cached` plus `git status --short`, sends the resul
 | MiniMax-M2.1 | 204,800 | 196,000 | 128,000 |
 | MiniMax-M2.1-highspeed | 204,800 | 196,000 | 128,000 |
 | MiniMax-M2 | 204,800 | 192,000 | 128,000 |
+
+MiniMax M3.1 Flash Preview always uses reasoning; the extension keeps it enabled even when the global M3 thinking setting is off.
 
 ## License
 

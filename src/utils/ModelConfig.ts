@@ -28,15 +28,15 @@ export type ApiFormat = "openai-compat" | "anthropic-compat";
  * Thinking control surfaced in the chat-model picker.
  *
  * - `off`      — never emit thinking blocks. On M3 this maps to
- *                `thinking: {"type":"disabled"}`. M2.x accepts the field but
- *                still thinks, so for those models `off` is effectively
- *                advisory (the docs say thinking cannot be disabled).
+ *                `thinking: {"type":"disabled"}`. M3.1 Flash Preview and
+ *                M2.x cannot disable thinking, so `off` is ignored for those
+ *                models.
  * - `adaptive` — always-on thinking. Maps to `thinking: {"type":"adaptive"}`.
  * - `auto`     — let the API / model decide. For Anthropic-compat that means
  *                thinking OFF for M3 (the Anthropic endpoint default) and ON
- *                for M2.x (which can't be disabled anyway). For OpenAI-compat
- *                that means thinking ON for M3 (the OpenAI endpoint default)
- *                and ON for M2.x. Concretely: omit the `thinking` field on
+ *                for M3.1 Flash Preview and M2.x. For OpenAI-compat that means
+ *                thinking ON for every supported M3/M2 model. Concretely: omit
+ *                the `thinking` field on
  *                the wire so the endpoint's own default takes effect.
  */
 export type ThinkingMode = "off" | "adaptive" | "auto";
@@ -93,11 +93,11 @@ export function thinkingModeLabel(mode: ThinkingMode): string {
 export function thinkingModeDescription(mode: ThinkingMode): string {
   switch (mode) {
     case "off":
-      return "Disable thinking for M3 (faster, no reasoning tokens). M2.x cannot disable thinking.";
+      return "Disable thinking for M3 (faster, no reasoning tokens). M3.1 Flash Preview and M2.x cannot disable thinking.";
     case "adaptive":
-      return "Always-on thinking for M3 (`thinking: {\"type\":\"adaptive\"}`). M2.x always thinks.";
+      return "Always-on thinking for M3 (`thinking: {\"type\":\"adaptive\"}`). M3.1 Flash Preview and M2.x always think.";
     case "auto":
-      return "Use the endpoint default — Anthropic: off for M3, on for M2.x. OpenAI: on for M3, on for M2.x.";
+      return "Use the endpoint default — Anthropic: off for M3, on for M3.1 Flash Preview and M2.x. OpenAI: on for all supported models.";
   }
 }
 
@@ -114,6 +114,11 @@ export function resolveThinkingControl(
   model: ModelInfo,
   format: ApiFormat,
 ): { type: "adaptive" } | { type: "disabled" } | undefined {
+  // M3.1 Flash Preview requires reasoning; disabling it returns HTTP 400.
+  if (model.id === "MiniMax-M3.1-Flash-Preview") {
+    return { type: "adaptive" };
+  }
+
   if (mode === "adaptive") {
     return { type: "adaptive" };
   }
@@ -209,13 +214,20 @@ export function modelsWithApiKey(): vscode.LanguageModelChatInformation[] {
       : mode === "adaptive"
         ? "thinking on (adaptive)"
         : `thinking ${mode}`;
-  return visibleModels.map(
-    (model) =>
-      ({
+  return visibleModels.map((model) => {
+    const isM31 = model.id === "MiniMax-M3.1-Flash-Preview";
+    const isM3 = model.id === "MiniMax-M3";
+    const modelThinkingLabel = isM31
+      ? "thinking always on"
+      : isM3
+        ? thinkingLabel
+        : undefined;
+    return (
+      {
         id: model.id,
         name: model.name,
         detail: `Token Plan · ${sdkLabel}`,
-        tooltip: `${model.name} -- in ${model.maxInputTokens.toLocaleString()} / out ${model.maxOutputTokens.toLocaleString()} max tokens (context up to ${model.contextLength.toLocaleString()}) · ${sdkLabel}${model.id === "MiniMax-M3" ? ` · ${thinkingLabel}` : ""}`,
+        tooltip: `${model.name} -- in ${model.maxInputTokens.toLocaleString()} / out ${model.maxOutputTokens.toLocaleString()} max tokens (context up to ${model.contextLength.toLocaleString()}) · ${sdkLabel}${modelThinkingLabel ? ` · ${modelThinkingLabel}` : ""}`,
         family: "minimax",
         version: getModelVersion(model.id),
         maxInputTokens: model.maxInputTokens,
@@ -223,14 +235,17 @@ export function modelsWithApiKey(): vscode.LanguageModelChatInformation[] {
         isUserSelectable: true,
         capabilities: {
           toolCalling: true,
-          imageInput: model.id === "MiniMax-M3",
+          imageInput: isM31 || isM3,
         },
-      }) as vscode.LanguageModelChatInformation,
-  );
+      } as vscode.LanguageModelChatInformation
+    );
+  });
 }
 
 function getModelVersion(modelId: ModelInfo["id"]): string {
   switch (modelId) {
+    case "MiniMax-M3.1-Flash-Preview":
+      return "3.1-flash-preview";
     case "MiniMax-M3":
       return "3";
     case "MiniMax-M2.7":
