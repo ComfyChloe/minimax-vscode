@@ -5,9 +5,11 @@ Language model chat provider for GitHub Copilot in VS Code using MiniMax text mo
 ## Features
 
 - Token Plan API key from [platform.minimax.io](https://platform.minimax.io)
-- OpenAI-compatible chat to `https://api.minimax.io/v1`
-- Tool calling and reasoning/thinking streaming
+- Live model catalog: the model list comes from MiniMax's own `/models` endpoint, enriched with [models.dev](https://models.dev) for context limits, image support and reasoning levels — new models show up without an update
+- OpenAI-compatible chat to `https://api.minimax.io/v1`, or the Anthropic-compatible Messages API at `https://api.minimax.io/anthropic`
+- Tool calling and reasoning/thinking streaming, with per-model reasoning-effort levels in the model picker
 - M3 and M3.1 Flash models support image input (multimodal)
+- Token usage reported per request, and the context estimate calibrated from real usage
 - AI-generated SCM commit messages from your staged diff (Conventional Commits)
 
 ## Requirements
@@ -40,11 +42,27 @@ The model picker shows which SDK is active (e.g. `Token Plan · Anthropic SDK`).
 | `minimax.apiBaseUrl` | `https://api.minimax.io/v1` | OpenAI-compatible base URL. Use `https://api.minimaxi.com/v1` for users in China. |
 | `minimax.anthropicBaseUrl` | `https://api.minimax.io/anthropic` | Anthropic-compatible base URL. Use `https://api.minimaxi.com/anthropic` for users in China. Ignored when `apiFormat` is `openai-compat`. |
 | `minimax.thinkingEnabled` | `true` | Sends `thinking: {type: "adaptive"}` (on) or `{type: "disabled"}` (off) for M3. M2.x and M3.1 Flash always emit thinking. |
-| `minimax.reasoningEffort` | `auto` | Thinking depth for `MiniMax-M3.1-Flash`: `auto`, `low`, `medium`, `high`, `xhigh`, `max`. `auto` leaves the field off the wire (endpoint default `max`). |
-| `minimax.visibleModels` | all | Array of model IDs to show in the picker. `MiniMax-M3.1-Flash-Preview` is accepted as an alias for `MiniMax-M3.1-Flash`. |
+| `minimax.reasoningEffort` | `auto` | Fallback thinking depth when the model picker does not provide one: `auto`, `low`, `medium`, `high`, `xhigh`, `max`. `auto` leaves the field off the wire (endpoint default `max`). |
+| `minimax.visibleModels` | all | Live model ids to show in the picker. Empty means every live model. `MiniMax-M3.1-Flash-Preview` is accepted as an alias for `MiniMax-M3.1-Flash`. |
 | `minimax.commitMessageGeneration.enabled` | `true` | Show the MiniMax sparkle on the SCM commit-message input. Disable to hide the inline button without uninstalling the extension. |
 
 The `MiniMax: Switch to Global/Chinese API` commands update both the OpenAI and Anthropic base URLs.
+
+## Model catalog
+
+The picker is built at runtime:
+
+1. `GET {minimax.apiBaseUrl}/models` returns the models the account can use. The list is refreshed every 30 minutes, on endpoint changes, and via the `MiniMax: Refresh Models` command.
+2. [models.dev](https://models.dev) fills in the context window, output limit, image support and reasoning levels for those ids. A model MiniMax ships before models.dev knows it still shows up, with safe default limits, and is corrected on the next refresh.
+3. If the live list cannot be fetched, the last known catalog is served from the extension's cache; if there is none, a static fallback list is used so the picker is never empty.
+
+Models that are not chat models (speech, music, video, embeddings) are filtered out. `minimax.visibleModels` pins the list: leave it empty to show every live model.
+
+### Reasoning effort
+
+Models that expose reasoning controls show a **Reasoning Effort** dropdown in the model picker, with the levels MiniMax actually supports (`low` … `max` for M3.1 Flash, on/off for M3). The choice is sent as `output_config.effort` on the Anthropic SDK path and `reasoning_effort` on the OpenAI SDK path.
+
+M3.1 Flash always reasons — the API answers `400` for `thinking: {"type": "disabled"}` — so it never offers an "off" switch.
 
 ## Commit message generation
 
@@ -67,6 +85,9 @@ The command reads `git diff --cached` plus `git status --short`, sends the resul
 
 ## Models
 
+The picker shows the models your account can use (live list). The table below
+is the static fallback used when the live list cannot be fetched.
+
 | Model | Context | Max input | Max output |
 |--------|---------|-----------|-----------|
 | MiniMax-M3.1-Flash | 1,000,000 | 1,000,000 | 131,072 |
@@ -83,8 +104,8 @@ The command reads `git diff --cached` plus `git status --short`, sends the resul
 
 `MiniMax-M3.1-Flash` is the generally available successor to `MiniMax-M3.1-Flash-Preview` (rolled out October 19, 2026). The preview id is still accepted as an alias in `minimax.visibleModels`.
 
-- It always reasons — the API rejects `thinking: {"type": "disabled"}` with HTTP 400 — so the extension keeps adaptive thinking on for it regardless of the thinking mode.
-- Thinking depth is tunable: `minimax.reasoningEffort` (`auto`, `low`, `medium`, `high`, `xhigh`, `max`) is sent as `output_config.effort` on the Anthropic SDK path and `reasoning_effort` on the OpenAI SDK path. `auto` leaves the field off the wire, so the endpoint default (`max`) applies.
+- It always reasons — the API rejects `thinking: {"type": "disabled"}` with HTTP 400 — so the extension never sends "off" for it.
+- Thinking depth is tunable from the model picker (`low` … `max`), sent as `output_config.effort` on the Anthropic SDK path and `reasoning_effort` on the OpenAI SDK path. `auto` leaves the field off the wire, so the endpoint default (`max`) applies.
 - It supports image input, like M3.
 
 > MiniMax is retiring the M2.5 / M2.7 families on November 18, 2026 (M2.1 and M2 are already retired). Token Plan requests to the M2.5 / M2.7 names are routed to M3.1 Flash until then.

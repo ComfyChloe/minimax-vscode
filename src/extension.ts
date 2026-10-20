@@ -30,8 +30,8 @@ import {
 
 export function activate(context: vscode.ExtensionContext): void {
   const authManager = new MiniMaxAuthentication(context.secrets);
-  const tokenCounter = new TokenCounter();
-  const provider = new MiniMaxProvider(authManager, tokenCounter);
+  const tokenCounter = new TokenCounter(context.globalState);
+  const provider = new MiniMaxProvider(authManager, tokenCounter, context);
 
   const switchRegion = async (host: "api.minimax.io" | "api.minimaxi.com", label: string) => {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
@@ -44,7 +44,14 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   context.subscriptions.push(
+    provider,
     vscode.lm.registerLanguageModelChatProvider("minimax", provider),
+    vscode.commands.registerCommand("minimax.refreshModels", async () => {
+      await provider.refreshModels();
+      vscode.window.showInformationMessage(
+        "MiniMax: Model list refreshed from the API.",
+      );
+    }),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (
         event.affectsConfiguration(`${CONFIG_SECTION}.${VISIBLE_MODELS_KEY}`) ||
@@ -56,6 +63,14 @@ export function activate(context: vscode.ExtensionContext): void {
         event.affectsConfiguration(`${CONFIG_SECTION}.${REASONING_EFFORT_KEY}`)
       ) {
         provider.notifyModelsChanged();
+      }
+      // A new endpoint or region means a different account: re-read the model
+      // list so the picker matches the endpoint in use.
+      if (
+        event.affectsConfiguration(`${CONFIG_SECTION}.${API_BASE_URL_KEY}`) ||
+        event.affectsConfiguration(`${CONFIG_SECTION}.${ANTHROPIC_BASE_URL_KEY}`)
+      ) {
+        void provider.refreshModels();
       }
       // Confirm setting changes so users get feedback no matter where the
       // change came from (settings UI, chat model config flow, or a command).

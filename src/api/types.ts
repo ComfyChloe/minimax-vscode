@@ -1,3 +1,5 @@
+import type { ReasoningChoices } from "../modelsDev";
+
 export interface MiniMaxReasoningDetail {
   text: string;
   id?: string;
@@ -89,11 +91,16 @@ export type ModelId = (typeof MODEL_IDS)[number];
 export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface ModelInfo {
-  id: ModelId;
+  /** Live ids are whatever MiniMax lists; the static catalog ids are a subset. */
+  id: string;
   name: string;
   contextLength: number;
   maxInputTokens: number;
   maxOutputTokens: number;
+  imageInput: boolean;
+  toolCall: boolean;
+  /** Reasoning controls offered for this model, when the live data has any. */
+  choices?: ReasoningChoices;
   apiModelId?: string;
   /**
    * Max tokens requested when the client does not ask for a specific budget.
@@ -110,6 +117,15 @@ const CTX_204K = 204_800;
 const OUT_131K = 131_072;
 const OUT_128K = 128_000;
 
+/**
+ * Static fallback catalog.
+ *
+ * The live catalog (MiniMax's own `/models` endpoint, enriched with
+ * models.dev) is the source of truth at runtime; this list keeps the picker
+ * usable when the live list cannot be fetched (no network, offline start) and
+ * carries the MiniMax-specific facts models.dev does not know, such as the
+ * fact that M3.1 Flash always reasons.
+ */
 export const SUPPORTED_MODELS: readonly ModelInfo[] = [
   {
     id: "MiniMax-M3.1-Flash",
@@ -117,19 +133,29 @@ export const SUPPORTED_MODELS: readonly ModelInfo[] = [
     contextLength: CTX_1M,
     maxInputTokens: 1_000_000,
     maxOutputTokens: OUT_131K,
+    imageInput: true,
+    toolCall: true,
     // M3.1 Flash always thinks (at `max` depth unless told otherwise), and
     // thinking tokens are billed against `max_tokens`. A bigger default budget
     // keeps the visible answer from being squeezed out by the reasoning pass.
     defaultMaxTokens: 32_768,
   },
-  { id: "MiniMax-M3", name: "MiniMax M3", contextLength: CTX_1M, maxInputTokens: 1_000_000, maxOutputTokens: OUT_131K },
-  { id: "MiniMax-M2.7", name: "MiniMax M2.7", contextLength: CTX_204K, maxInputTokens: 200_000, maxOutputTokens: OUT_131K },
-  { id: "MiniMax-M2.7-highspeed", name: "MiniMax M2.7 (High-Speed)", contextLength: CTX_204K, maxInputTokens: 200_000, maxOutputTokens: OUT_131K },
-  { id: "MiniMax-M2.5", name: "MiniMax M2.5", contextLength: CTX_204K, maxInputTokens: 196_000, maxOutputTokens: OUT_128K },
-  { id: "MiniMax-M2.5-highspeed", name: "MiniMax M2.5 (High-Speed)", contextLength: CTX_204K, maxInputTokens: 196_000, maxOutputTokens: OUT_128K },
-  { id: "MiniMax-M2.1", name: "MiniMax M2.1", contextLength: CTX_204K, maxInputTokens: 196_000, maxOutputTokens: OUT_128K },
-  { id: "MiniMax-M2.1-highspeed", name: "MiniMax M2.1 (High-Speed)", contextLength: CTX_204K, maxInputTokens: 196_000, maxOutputTokens: OUT_128K },
-  { id: "MiniMax-M2", name: "MiniMax M2", contextLength: CTX_204K, maxInputTokens: 192_000, maxOutputTokens: OUT_128K },
+  {
+    id: "MiniMax-M3",
+    name: "MiniMax M3",
+    contextLength: CTX_1M,
+    maxInputTokens: 1_000_000,
+    maxOutputTokens: OUT_131K,
+    imageInput: true,
+    toolCall: true,
+  },
+  { id: "MiniMax-M2.7", name: "MiniMax M2.7", contextLength: CTX_204K, maxInputTokens: 200_000, maxOutputTokens: OUT_131K, imageInput: false, toolCall: true },
+  { id: "MiniMax-M2.7-highspeed", name: "MiniMax M2.7 (High-Speed)", contextLength: CTX_204K, maxInputTokens: 200_000, maxOutputTokens: OUT_131K, imageInput: false, toolCall: true },
+  { id: "MiniMax-M2.5", name: "MiniMax M2.5", contextLength: CTX_204K, maxInputTokens: 196_000, maxOutputTokens: OUT_128K, imageInput: false, toolCall: true },
+  { id: "MiniMax-M2.5-highspeed", name: "MiniMax M2.5 (High-Speed)", contextLength: CTX_204K, maxInputTokens: 196_000, maxOutputTokens: OUT_128K, imageInput: false, toolCall: true },
+  { id: "MiniMax-M2.1", name: "MiniMax M2.1", contextLength: CTX_204K, maxInputTokens: 196_000, maxOutputTokens: OUT_128K, imageInput: false, toolCall: true },
+  { id: "MiniMax-M2.1-highspeed", name: "MiniMax M2.1 (High-Speed)", contextLength: CTX_204K, maxInputTokens: 196_000, maxOutputTokens: OUT_128K, imageInput: false, toolCall: true },
+  { id: "MiniMax-M2", name: "MiniMax M2", contextLength: CTX_204K, maxInputTokens: 192_000, maxOutputTokens: OUT_128K, imageInput: false, toolCall: true },
 ];
 
 /**
@@ -139,7 +165,7 @@ export const SUPPORTED_MODELS: readonly ModelInfo[] = [
  * The alias keeps `minimax.visibleModels` entries written against the preview
  * id working instead of silently dropping the model from the picker.
  */
-export const LEGACY_MODEL_ALIASES: Readonly<Record<string, ModelId>> = {
+export const LEGACY_MODEL_ALIASES: Readonly<Record<string, string>> = {
   "MiniMax-M3.1-Flash-Preview": "MiniMax-M3.1-Flash",
 };
 
@@ -151,9 +177,9 @@ export function resolveLegacyModelId(id: string): string {
   return LEGACY_MODEL_ALIASES[id] ?? id;
 }
 
-const MODEL_BY_ID: Readonly<Record<ModelId, ModelInfo>> = Object.fromEntries(
+const MODEL_BY_ID: Readonly<Record<string, ModelInfo>> = Object.fromEntries(
   SUPPORTED_MODELS.map((model) => [model.id, model]),
-) as Record<ModelId, ModelInfo>;
+);
 
 export function resolveModelIdForApi(id: string): string {
   const resolved = resolveLegacyModelId(id);
@@ -168,7 +194,126 @@ export function getModelById(id: ModelId): ModelInfo;
 export function getModelById(id: string): ModelInfo | undefined;
 export function getModelById(id: string): ModelInfo | undefined {
   if (Object.prototype.hasOwnProperty.call(MODEL_BY_ID, id)) {
-    return MODEL_BY_ID[id as ModelId];
+    return MODEL_BY_ID[id];
   }
   return undefined;
+}
+
+/**
+ * One entry from the provider's live `GET {baseUrl}/models`. Only the id is
+ * guaranteed; the limit / modality fields are picked up when the provider
+ * sends them.
+ */
+export interface LiveModelEntry {
+  id: string;
+  name?: string;
+  context_window?: number;
+  max_output_tokens?: number;
+  input_modalities?: string[];
+}
+
+/**
+ * Ids matching this pattern are never chat models (TTS / music / video /
+ * etc.) and must not land in the chat model picker.
+ */
+export const NON_CHAT_MODEL_PATTERN =
+  /embed|rerank|speech|video|music|tts|voice|image|whisper|moderation/i;
+
+export function isChatModelId(id: string): boolean {
+  return !NON_CHAT_MODEL_PATTERN.test(id);
+}
+
+/** Turn a raw model id into a readable name, e.g. `MiniMax-M3.1-Flash`. */
+export function humanizeModelId(id: string): string {
+  const parts = id.split(/[-_]+/).filter((part) => part.length > 0);
+  const words = parts.map((part) => {
+    if (part.toLowerCase() === "minimax") {
+      return "MiniMax";
+    }
+    if (/^[a-z]*\d[\w.]*$/i.test(part)) {
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    }
+    if (/^v?\d+(\.\d+)*$/i.test(part)) {
+      return part.toUpperCase().startsWith("V") ? part.toUpperCase() : part;
+    }
+    return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+  });
+  return words.join(" ");
+}
+
+interface ModelsApiShape {
+  data?: Array<{
+    id?: unknown;
+    name?: unknown;
+    context_window?: unknown;
+    max_output_tokens?: unknown;
+    input_modalities?: unknown;
+  }>;
+}
+
+function readPositiveInt(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : undefined;
+}
+
+/**
+ * `GET {baseUrl}/models` with a Bearer key; returns chat-model entries only.
+ * Throws on network/HTTP errors so the caller can keep the last good list.
+ */
+export async function fetchLiveModelCatalog(
+  baseUrl: string,
+  apiKey: string,
+): Promise<LiveModelEntry[]> {
+  const normalizedBase = baseUrl.trim().replace(/\/+$/, "");
+  const fetchFn = globalThis.fetch;
+  if (typeof fetchFn !== "function") {
+    throw new Error("fetch is not available in this runtime");
+  }
+  const response = await fetchFn(`${normalizedBase}/models`, {
+    method: "GET",
+    signal: AbortSignal.timeout(20_000),
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      Accept: "application/json",
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`GET /models failed with HTTP ${response.status}`);
+  }
+  const body = (await response.json()) as ModelsApiShape;
+  if (!body || !Array.isArray(body.data)) {
+    throw new Error("GET /models returned an unexpected shape (missing data[])");
+  }
+  const entries: LiveModelEntry[] = [];
+  for (const item of body.data) {
+    if (!item || typeof item.id !== "string" || item.id.length === 0) {
+      continue;
+    }
+    if (!isChatModelId(item.id)) {
+      continue;
+    }
+    const entry: LiveModelEntry = { id: item.id };
+    if (typeof item.name === "string" && item.name.length > 0) {
+      entry.name = item.name;
+    }
+    const contextWindow = readPositiveInt(item.context_window);
+    if (contextWindow !== undefined) {
+      entry.context_window = contextWindow;
+    }
+    const maxOutput = readPositiveInt(item.max_output_tokens);
+    if (maxOutput !== undefined) {
+      entry.max_output_tokens = maxOutput;
+    }
+    if (Array.isArray(item.input_modalities)) {
+      const modalities = item.input_modalities.filter(
+        (modality): modality is string => typeof modality === "string",
+      );
+      if (modalities.length > 0) {
+        entry.input_modalities = modalities;
+      }
+    }
+    entries.push(entry);
+  }
+  return entries;
 }

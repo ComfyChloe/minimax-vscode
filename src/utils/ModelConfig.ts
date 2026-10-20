@@ -1,12 +1,16 @@
 ﻿import * as vscode from "vscode";
 import {
-  SUPPORTED_MODELS,
-  getModelById,
   resolveLegacyModelId,
   type ModelId,
   type ModelInfo,
   type ReasoningEffort,
 } from "../api/types";
+import {
+  reasoningSchema,
+  resolveReasoningChoice,
+  tokenLimits,
+  type ReasoningChoices,
+} from "../modelsDev";
 
 export const CONFIG_SECTION = "minimax";
 export const VISIBLE_MODELS_KEY = "visibleModels";
@@ -118,7 +122,7 @@ export function resolveThinkingControl(
   format: ApiFormat,
 ): { type: "adaptive" } | { type: "disabled" } | undefined {
   // M3.1 Flash requires reasoning; disabling it returns HTTP 400.
-  if (model.id === "MiniMax-M3.1-Flash") {
+  if (ALWAYS_THINKING_MODELS.has(model.id)) {
     return { type: "adaptive" };
   }
 
@@ -202,11 +206,91 @@ export function reasoningEffortLabel(effort: ReasoningEffortSetting): string {
 export function resolveReasoningEffort(
   model: ModelInfo,
 ): ReasoningEffort | undefined {
-  if (model.id !== "MiniMax-M3.1-Flash") {
+  if (!ALWAYS_THINKING_MODELS.has(model.id)) {
     return undefined;
   }
   const effort = getReasoningEffort();
   return effort === "auto" ? undefined : effort;
+}
+
+/** The thinking control and depth to put on the wire for one request. */
+export interface ReasoningRequest {
+  thinking?: { type: "adaptive" } | { type: "disabled" };
+  effort?: ReasoningEffort;
+}
+
+/**
+ * Resolve the reasoning controls for a request.
+ *
+ * Precedence:
+ * 1. the per-model picker value Copilot sends with the model
+ *    (`modelConfiguration.reasoningEffort`),
+ * 2. the global `minimax.reasoningEffort` setting,
+ * 3. the global thinking mode (`off` / `adaptive` / `auto`).
+ *
+ * Models without live reasoning controls fall back to the global thinking
+ * mode, and models that always reason never get `thinking: disabled` (the
+ * API answers 400 for it).
+ */
+export function resolveReasoningRequest(
+  model: ModelInfo,
+  configured: unknown,
+  format: ApiFormat,
+): ReasoningRequest {
+  const choices = model.choices;
+  if (choices) {
+    const choice = resolvePickerChoice(choices, configured);
+    if (choice === "off") {
+      return { thinking: { type: "disabled" } };
+    }
+    if (choice === "on") {
+      return { thinking: { type: "adaptive" } };
+    }
+    if (choice !== undefined && choice !== "auto") {
+      return {
+        thinking: { type: "adaptive" },
+        effort: choice as ReasoningEffort,
+      };
+    }
+    // "auto": send nothing and let the endpoint decide.
+    return {};
+  }
+
+  const thinking = resolveThinkingControl(getThinkingMode(), model, format);
+  const effort = resolveReasoningEffort(model);
+  return {
+    ...(thinking ? { thinking } : {}),
+    ...(effort ? { effort } : {}),
+  };
+}
+
+/**
+ * The value to use for a model that offers live reasoning controls: the
+ * picker's value when it is still offered, else the global settings, else the
+ * model's own default.
+ */
+function resolvePickerChoice(
+  choices: ReasoningChoices,
+  configured: unknown,
+): string | undefined {
+  if (
+    typeof configured === "string" &&
+    choices.values.includes(configured)
+  ) {
+    return configured;
+  }
+  const globalEffort = getReasoningEffort();
+  if (globalEffort !== "auto" && choices.values.includes(globalEffort)) {
+    return globalEffort;
+  }
+  const mode = getThinkingMode();
+  if (mode === "off" && choices.values.includes("off")) {
+    return "off";
+  }
+  if (mode === "adaptive" && choices.values.includes("on")) {
+    return "on";
+  }
+  return resolveReasoningChoice(choices, configured);
 }
 
 /**
@@ -274,8 +358,17 @@ export function getApiBaseUrl(): string | undefined {
   return undefined;
 }
 
-export function modelsWithApiKey(): vscode.LanguageModelChatInformation[] {
-  const visibleModels = getVisibleModels();
+/**
+ * Build the VS Code model picker entries for a catalog.
+ *
+ * `allModels` is the live catalog (MiniMax's own `/models` list, enriched
+ * with models.dev). Models the user pinned through `minimax.visibleModels`
+ * are shown first, the rest keep the catalog order.
+ */
+export function modelsWithApiKey(
+  allModels: readonly ModelInfo[],
+): vscode.LanguageModelChatInformation[] {
+  const visibleModels = getVisibleModels(allModels);
   const format = getApiFormat();
   const sdkLabel = format === "anthropic-compat" ? "Anthropic SDK" : "OpenAI SDK";
   const mode = getThinkingMode();
@@ -286,27 +379,36 @@ export function modelsWithApiKey(): vscode.LanguageModelChatInformation[] {
         ? "thinking on (adaptive)"
         : `thinking ${mode}`;
   const effort = getReasoningEffort();
-  return visibleModels.map(
-    (model) =>
-      ({
-        id: model.id,
-        name: model.name,
-        detail: `Token Plan · ${sdkLabel}`,
-        tooltip: `${model.name} -- in ${model.maxInputTokens.toLocaleString()} / out ${model.maxOutputTokens.toLocaleString()} max tokens (context up to ${model.contextLength.toLocaleString()}) · ${sdkLabel}${model.id === "MiniMax-M3.1-Flash" ? ` · thinking always on${effort === "auto" ? "" : ` · effort ${effort}`}` : model.id === "MiniMax-M3" ? ` · ${thinkingLabel}` : ""}`,
-        family: "minimax",
-        version: getModelVersion(model.id),
-        maxInputTokens: model.maxInputTokens,
-        maxOutputTokens: model.maxOutputTokens,
-        isUserSelectable: true,
-        capabilities: {
-          toolCalling: true,
-          imageInput: model.id === "MiniMax-M3.1-Flash" || model.id === "MiniMax-M3",
-        },
-      }) as vscode.LanguageModelChatInformation,
-  );
+  return visibleModels.map((model) => {
+    const limits = tokenLimits(model.contextLength, model.maxOutputTokens);
+    const alwaysThinks = ALWAYS_THINKING_MODELS.has(model.id);
+    return {
+      id: model.id,
+      name: model.name,
+      detail: `Token Plan · ${sdkLabel}`,
+      tooltip: `${model.name} -- in ${limits.maxInputTokens.toLocaleString()} / out ${limits.maxOutputTokens.toLocaleString()} max tokens (context up to ${limits.maxContextWindowTokens.toLocaleString()}) · ${sdkLabel}${alwaysThinks ? ` · thinking always on${effort === "auto" ? "" : ` · effort ${effort}`}` : model.id === "MiniMax-M3" ? ` · ${thinkingLabel}` : ""}`,
+      family: "minimax",
+      version: getModelVersion(model.id),
+      maxInputTokens: limits.maxInputTokens,
+      maxOutputTokens: limits.maxOutputTokens,
+      isUserSelectable: true,
+      isBYOK: true,
+      capabilities: {
+        toolCalling: model.toolCall,
+        imageInput: model.imageInput,
+      },
+      ...(model.choices ? { configurationSchema: reasoningSchema(model.choices) } : {}),
+    } as unknown as vscode.LanguageModelChatInformation;
+  });
 }
 
-function getModelVersion(modelId: ModelInfo["id"]): string {
+/**
+ * Models that always reason. Sending `thinking: {"type":"disabled"}` for
+ * these returns HTTP 400, so they never offer an "off" choice.
+ */
+const ALWAYS_THINKING_MODELS = new Set(["MiniMax-M3.1-Flash", "MiniMax-M3.1-Flash-Preview"]);
+
+function getModelVersion(modelId: string): string {
   switch (modelId) {
     case "MiniMax-M3.1-Flash":
       return "3.1-flash";
@@ -326,26 +428,38 @@ function getModelVersion(modelId: ModelInfo["id"]): string {
       return "2.1-highspeed";
     case "MiniMax-M2":
       return "2";
+    default:
+      return modelId;
   }
 }
 
-function getVisibleModels(): readonly ModelInfo[] {
+/**
+ * Filter a catalog down to the models the user wants to see.
+ *
+ * `minimax.visibleModels` holds plain live ids (no enum); an empty list means
+ * "show every live model". Ids that MiniMax renamed (the M3.1 Flash preview)
+ * still resolve, so an existing list keeps working.
+ */
+export function getVisibleModels(allModels: readonly ModelInfo[]): readonly ModelInfo[] {
+  if (allModels.length === 0) {
+    return [];
+  }
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
   const raw = config.get<unknown>(VISIBLE_MODELS_KEY);
   if (!Array.isArray(raw)) {
-    return SUPPORTED_MODELS;
+    return [...allModels];
   }
 
   const configuredIds = new Set(
     raw
-      .filter((value): value is string => typeof value === "string")
-      // Model ids that were renamed (e.g. the M3.1 Flash preview) still
-      // resolve, so an existing `visibleModels` list keeps working.
-      .map((id) => resolveLegacyModelId(id))
-      .filter((id) => getModelById(id) !== undefined),
+      .filter((value): value is string => typeof value === "string" && value.length > 0)
+      .map((id) => resolveLegacyModelId(id)),
   );
-  const visibleModels = SUPPORTED_MODELS.filter((model) => configuredIds.has(model.id));
-  return visibleModels.length > 0 ? visibleModels : SUPPORTED_MODELS;
+  if (configuredIds.size === 0) {
+    return [...allModels];
+  }
+  const visibleModels = allModels.filter((model) => configuredIds.has(model.id));
+  return visibleModels.length > 0 ? visibleModels : [...allModels];
 }
 
 export function resolveMaxTokens(

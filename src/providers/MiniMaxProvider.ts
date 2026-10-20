@@ -1,9 +1,23 @@
-﻿import * as vscode from "vscode";
+import { createHash } from "node:crypto";
+import * as vscode from "vscode";
 import { MiniMaxError } from "../api/MiniMaxError";
-import { getModelById, resolveModelIdForApi } from "../api/types";
+import {
+  SUPPORTED_MODELS,
+  fetchLiveModelCatalog,
+  humanizeModelId,
+  resolveModelIdForApi,
+  type LiveModelEntry,
+  type ModelInfo,
+} from "../api/types";
 import type { MinimaxStreamClient } from "../api/MinimaxStreamClient";
 import { MiniMaxOpenAIClient } from "../api/MiniMaxOpenAIClient";
 import { MiniMaxAnthropicClient } from "../api/MiniMaxAnthropicClient";
+import {
+  reasoningChoices,
+  resolveModelsDev,
+  tokenLimits,
+  type ModelsDevCache,
+} from "../modelsDev";
 import { convertMessages } from "../utils/MessageConverter";
 import {
   getApiBaseUrl,
@@ -15,9 +29,8 @@ import {
   isThinkingMode,
   modelsWithApiKey,
   resolveMaxTokens,
-  resolveReasoningEffort,
+  resolveReasoningRequest,
   resolveTemperature,
-  resolveThinkingControl,
   resolveTopP,
   setApiFormat,
   setReasoningEffort,
@@ -42,16 +55,48 @@ type PrepareOptionsWithConfiguration = vscode.PrepareLanguageModelChatModelOptio
   configuration?: Record<string, unknown>;
 };
 
-export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
+type ResponseOptionsWithEffort = vscode.ProvideLanguageModelChatResponseOptions & {
+  modelConfiguration?: { reasoningEffort?: unknown };
+  configuration?: { reasoningEffort?: unknown };
+};
+
+export class MiniMaxProvider
+  implements vscode.LanguageModelChatProvider, vscode.Disposable
+{
   private readonly modelsChangedEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeLanguageModelChatInformation = this.modelsChangedEmitter.event;
 
   private readonly modelApiKeys = new Map<string, string>();
 
+  /** Live catalog served to the picker. */
+  private availableModels: readonly ModelInfo[] = [];
+  /** Cache scope: hash of endpoint + account, so a key change re-reads. */
+  private catalogScope: string | undefined;
+  private refreshGeneration = 0;
+  private lastCatalogWarning: string | undefined;
+  private readonly catalogOutput = vscode.window.createOutputChannel("MiniMax");
+  private devCache: ModelsDevCache | undefined;
+  /** The key VS Code hands us (Manage Models); requests use it, so refreshes do too. */
+  private refreshKey: string | undefined;
+  private readonly refreshTimer: ReturnType<typeof setInterval>;
+
   constructor(
     private readonly authManager: MiniMaxAuthentication,
     private readonly tokenCounter: TokenCounter,
-  ) { }
+    private readonly context: vscode.ExtensionContext,
+  ) {
+    void this.refreshModels();
+    this.refreshTimer = setInterval(() => {
+      void this.refreshModels();
+    }, 30 * 60 * 1000);
+  }
+
+  dispose(): void {
+    ++this.refreshGeneration;
+    clearInterval(this.refreshTimer);
+    this.catalogOutput.dispose();
+    this.modelsChangedEmitter.dispose();
+  }
 
   private createClient(): MinimaxStreamClient {
     const format = getApiFormat();
@@ -69,6 +114,121 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
     this.modelApiKeys.clear();
   }
 
+  /**
+   * Re-read `GET {baseUrl}/models`, resolve limits from the provider fields
+   * first and models.dev second, persist the result, and fire
+   * onDidChange only when the served list actually changed.
+   */
+  async refreshModels(): Promise<void> {
+    let apiKey = this.refreshKey;
+    try {
+      apiKey ??= await this.authManager.getApiKey();
+      apiKey = this.refreshKey ?? apiKey;
+    } catch {
+      return;
+    }
+    if (!apiKey || apiKey.trim().length === 0) {
+      return;
+    }
+    const baseUrl = (getApiBaseUrl() ?? DEFAULT_API_BASE_URL).replace(/\/+$/, "");
+    const scope = catalogScope(baseUrl, apiKey.trim());
+    const generation = ++this.refreshGeneration;
+    if (scope !== this.catalogScope) {
+      this.catalogScope = scope;
+      const persisted = readPersistedCatalog(this.context.globalState, scope);
+      this.availableModels = persisted.models;
+      this.devCache = persisted.devCache;
+      this.modelApiKeys.clear();
+      this.notifyModelsChanged();
+    }
+    let live: LiveModelEntry[];
+    try {
+      live = await fetchLiveModelCatalog(baseUrl, apiKey.trim());
+    } catch (error) {
+      if (generation === this.refreshGeneration) {
+        this.reportCatalogWarning(
+          "Could not refresh the MiniMax model list",
+          baseUrl,
+          error,
+        );
+        // Offline (or the key is not accepted yet): fall back to the static
+        // catalog so the picker is not empty.
+        if (this.availableModels.length === 0) {
+          this.availableModels = buildStaticCatalog();
+          this.notifyModelsChanged();
+        }
+      }
+      return;
+    }
+    if (generation !== this.refreshGeneration) {
+      return;
+    }
+    const ids = live.map((entry) => entry.id);
+    let nextDevCache: ModelsDevCache;
+    try {
+      nextDevCache = await resolveModelsDev(baseUrl, ids, this.devCache);
+      if (generation === this.refreshGeneration) {
+        this.lastCatalogWarning = undefined;
+      }
+    } catch (error) {
+      if (generation !== this.refreshGeneration) {
+        return;
+      }
+      // Metadata enrichment must never veto the authoritative live model ids.
+      nextDevCache = this.devCache ?? { models: {} };
+      this.reportCatalogWarning(
+        "Could not refresh models.dev metadata; using cached metadata or default limits for live models",
+        baseUrl,
+        error,
+      );
+    }
+    if (generation !== this.refreshGeneration) {
+      return;
+    }
+    const built = buildCatalog(live, nextDevCache);
+    this.catalogOutput.appendLine(
+      `Loaded ${built.length} live chat models from ${baseUrl}/models.`,
+    );
+    this.devCache = nextDevCache;
+    if (JSON.stringify(built) === JSON.stringify(this.availableModels)) {
+      return;
+    }
+    this.availableModels = built;
+    try {
+      await this.context.globalState.update(MODEL_CATALOG_CACHE_KEY, {
+        scope,
+        devCache: nextDevCache,
+        models: built,
+      });
+    } catch {
+      // Cache is best-effort; the in-memory list is already updated.
+    }
+    if (generation === this.refreshGeneration) {
+      this.notifyModelsChanged();
+    }
+  }
+
+  private reportCatalogWarning(
+    message: string,
+    baseUrl: string,
+    error: unknown,
+  ): void {
+    // Never log response bodies or raw network errors: they may contain
+    // credentials.
+    const status =
+      error instanceof Error ? /HTTP (\d{3})/.exec(error.message)?.[1] : undefined;
+    const warning = `${message}${
+      status ? ` (HTTP ${status})` : ""
+    }. Check minimax.apiBaseUrl, the matching region's M Plan Subscription Key, and network access. See Output > MiniMax.`;
+    this.catalogOutput.appendLine(
+      `${message} at ${baseUrl}${status ? ` (HTTP ${status})` : ""}.`,
+    );
+    if (this.lastCatalogWarning !== warning) {
+      this.lastCatalogWarning = warning;
+      void vscode.window.showWarningMessage(warning);
+    }
+  }
+
   async provideLanguageModelChatInformation(
     options: vscode.PrepareLanguageModelChatModelOptions,
     _token: vscode.CancellationToken,
@@ -76,19 +236,50 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
     const optionsWithConfig = options as PrepareOptionsWithConfiguration;
     const configuredApiKey = this.extractConfiguredApiKey(optionsWithConfig);
     await this.applyConfiguredPreferences(optionsWithConfig);
-    const models = modelsWithApiKey();
-
     if (!configuredApiKey) {
       this.modelApiKeys.clear();
       return [];
     }
 
+    // Make sure the catalog matches the account / endpoint in use before we
+    // serve it.
+    await this.syncCatalog(configuredApiKey);
+    if (
+      this.catalogScope !==
+      catalogScope(getApiBaseUrl() ?? DEFAULT_API_BASE_URL, configuredApiKey)
+    ) {
+      return [];
+    }
+
+    const models = modelsWithApiKey(this.availableModels);
     this.modelApiKeys.clear();
     for (const model of models) {
       this.modelApiKeys.set(model.id, configuredApiKey);
     }
 
     return models;
+  }
+
+  /** Refresh and await a changed account/endpoint before serving its catalog. */
+  private async syncCatalog(apiKey: string): Promise<void> {
+    const baseUrl = getApiBaseUrl() ?? DEFAULT_API_BASE_URL;
+    const scope = catalogScope(baseUrl, apiKey);
+    if (
+      scope === this.catalogScope &&
+      apiKey === this.refreshKey &&
+      this.availableModels.length > 0
+    ) {
+      return;
+    }
+    this.refreshKey = apiKey;
+    await this.refreshModels();
+    // A background refresh (the periodic one, or the one started on
+    // activation) can supersede the refresh we just started, which then
+    // discards its own result. Retry once so the catalog we are about to
+    // serve is really for this account.
+    if (this.catalogScope !== scope || this.availableModels.length === 0) {
+      await this.refreshModels();
+    }
   }
 
   async provideLanguageModelChatResponse(
@@ -134,16 +325,9 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
     if (typeof text === "string") {
       return Promise.resolve(this.tokenCounter.estimateTokens(text));
     }
-
-    let tokens = 0;
-    for (const part of text.content) {
-      if (part instanceof vscode.LanguageModelTextPart) {
-        tokens += this.tokenCounter.estimateTokens(part.value);
-      } else if (part instanceof vscode.LanguageModelDataPart) {
-        tokens += Math.ceil(part.data.length / 4);
-      }
-    }
-    return Promise.resolve(tokens);
+    return Promise.resolve(
+      this.tokenCounter.estimatePayload(convertMessages([text])),
+    );
   }
 
   private async streamResponse(
@@ -154,7 +338,7 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
     token: vscode.CancellationToken,
     apiKey: string,
   ): Promise<void> {
-    const resolvedModel = getModelById(model.id);
+    const resolvedModel = this.findModel(model.id);
     if (!resolvedModel) {
       throw new Error(`Unsupported model "${model.id}" for MiniMax (coding / Token Plan).`);
     }
@@ -164,6 +348,8 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
     const pendingToolCalls = new Map<number, AccumulatedToolCall>();
     const emittedToolCallIndices = new Set<number>();
     let pendingTrailingContent = "";
+    let usageInputTokens = 0;
+    let usageOutputTokens = 0;
     const tools = convertTools(options.tools);
 
     // Split system message out so the Anthropic adapter can put it in the
@@ -181,11 +367,24 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
 
     const toolChoice = resolveToolChoice(options, tools);
     const topP = resolveTopP(options);
+    const requestChars = this.tokenCounter.payloadChars({
+      messages: converted,
+      tools: tools ?? [],
+    });
+
+    // Reasoning controls: the per-model picker value wins, then the global
+    // settings, then the endpoint default.
+    const optionsWithEffort = options as ResponseOptionsWithEffort;
+    const configuredEffort =
+      optionsWithEffort.modelConfiguration?.reasoningEffort ??
+      optionsWithEffort.configuration?.reasoningEffort;
+    const reasoning = resolveReasoningRequest(
+      resolvedModel,
+      configuredEffort,
+      getApiFormat(),
+    );
 
     const client = this.createClient();
-    const thinkingMode = getThinkingMode();
-    const thinkingControl = resolveThinkingControl(thinkingMode, resolvedModel, getApiFormat());
-    const reasoningEffort = resolveReasoningEffort(resolvedModel);
     const stream = client.streamChat({
       apiKey,
       model: resolveModelIdForApi(resolvedModel.id),
@@ -195,8 +394,8 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
       tools,
       toolChoice: toolChoice ?? "auto",
       reasoningSplit: true,
-      ...(thinkingControl ? { thinking: thinkingControl } : {}),
-      ...(reasoningEffort ? { reasoningEffort } : {}),
+      ...(reasoning.thinking ? { thinking: reasoning.thinking } : {}),
+      ...(reasoning.effort ? { reasoningEffort: reasoning.effort } : {}),
       cancellationToken: token,
       messages: nonSystemMessages,
       systemPrompt: systemParts.join("\n\n") || undefined,
@@ -276,9 +475,20 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
           break;
         }
         case "content_block_start":
-        case "usage":
-          // Informational only on these paths; nothing to do in the provider loop.
+          // Informational only on this path; nothing to do in the provider loop.
           break;
+        case "usage": {
+          // Collect the real token usage so it can be reported once the
+          // stream is done, and learn the request-size ratio so the context
+          // estimate stays honest.
+          if (typeof event.inputTokens === "number") {
+            usageInputTokens = event.inputTokens;
+          }
+          if (typeof event.outputTokens === "number") {
+            usageOutputTokens = event.outputTokens;
+          }
+          break;
+        }
         case "finish": {
           this.emitToolCalls(progress, pendingToolCalls, emittedToolCallIndices);
           break;
@@ -296,6 +506,16 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
       progress.report(new vscode.LanguageModelTextPart(pendingTrailingContent));
       pendingTrailingContent = "";
     }
+
+    // Report the token usage of this request once the stream is complete.
+    if (usageInputTokens > 0 || usageOutputTokens > 0) {
+      this.reportUsage(
+        progress,
+        requestChars,
+        usageInputTokens,
+        usageOutputTokens,
+      );
+    }
   }
 
   private emitToolCalls(
@@ -307,6 +527,40 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
     for (const call of ordered) {
       this.emitToolCall(progress, call, emittedIndices);
     }
+  }
+
+  /**
+   * Report the token usage of the request as a data part so the chat UI can
+   * show it, and calibrate the request-size estimator with the real numbers.
+   */
+  private reportUsage(
+    progress: vscode.Progress<vscode.LanguageModelResponsePart>,
+    requestChars: number,
+    inputTokens: number,
+    outputTokens: number,
+  ): void {
+    if (inputTokens > 0) {
+      this.tokenCounter.calibrate(requestChars, inputTokens);
+    }
+    if (inputTokens <= 0 && outputTokens <= 0) {
+      return;
+    }
+    const payload = JSON.stringify({
+      prompt_tokens: inputTokens,
+      completion_tokens: outputTokens,
+      total_tokens: inputTokens + outputTokens,
+    });
+    const DataPartCtor = vscode.LanguageModelDataPart as unknown as new (
+      data: Uint8Array,
+      mimeType: string,
+    ) => vscode.LanguageModelResponsePart;
+    progress.report(
+      new DataPartCtor(new TextEncoder().encode(payload), "usage"),
+    );
+  }
+
+  private findModel(id: string): ModelInfo | undefined {
+    return this.availableModels.find((model) => model.id === id);
   }
 
   private emitToolCall(
@@ -394,4 +648,189 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
     const normalized = apiKey.trim();
     return normalized.length > 0 ? normalized : undefined;
   }
+}
+
+const MODEL_CATALOG_CACHE_KEY = "minimax.modelCatalog.v1";
+const DEFAULT_API_BASE_URL = "https://api.minimax.io/v1";
+const DEFAULT_CONTEXT = 131_072;
+const DEFAULT_MAX_OUTPUT = 32_768;
+
+/**
+ * Thinking depths MiniMax documents for the models that expose them. models.dev
+ * carries the same list, but the static copy keeps the picker correct when the
+ * models.dev catalog is unreachable.
+ */
+const KNOWN_REASONING_LEVELS: Record<string, readonly string[]> = {
+  "MiniMax-M3.1-Flash": ["low", "medium", "high", "xhigh", "max"],
+  "MiniMax-M3.1-Flash-Preview": ["low", "medium", "high", "xhigh", "max"],
+};
+
+/**
+ * Build the served catalog from the live model list.
+ *
+ * Limits come from the provider's own fields first, then models.dev, then the
+ * static catalog, then safe defaults — so a model MiniMax ships before
+ * models.dev catalogs it still shows up, with limits that get corrected on the
+ * next refresh.
+ */
+function buildCatalog(
+  live: readonly LiveModelEntry[],
+  dev: ModelsDevCache,
+): ModelInfo[] {
+  const staticById = new Map(SUPPORTED_MODELS.map((model) => [model.id, model]));
+  const models: ModelInfo[] = [];
+  for (const entry of live) {
+    const devModel = dev.models[entry.id] ?? undefined;
+    const staticModel = staticById.get(entry.id);
+
+    const context = firstPositive(
+      entry.context_window,
+      devModel?.limit?.context,
+      staticModel?.contextLength,
+      DEFAULT_CONTEXT,
+    );
+    const maxOutput = firstPositive(
+      entry.max_output_tokens,
+      devModel?.limit?.output,
+      staticModel?.maxOutputTokens,
+      DEFAULT_MAX_OUTPUT,
+    );
+    const limits = tokenLimits(context, maxOutput);
+
+    const inputModalities =
+      entry.input_modalities ?? devModel?.modalities?.input;
+    const imageInput = Array.isArray(inputModalities)
+      ? inputModalities.includes("image")
+      : (staticModel?.imageInput ?? false);
+
+    const levels = KNOWN_REASONING_LEVELS[entry.id];
+    const choices = reasoningChoices(devModel?.reasoning_options, {
+      levels: levels ? [...levels] : undefined,
+    });
+
+    models.push({
+      id: entry.id,
+      name: entry.name ?? devModel?.name ?? staticModel?.name ?? humanizeModelId(entry.id),
+      contextLength: limits.maxContextWindowTokens,
+      maxInputTokens: limits.maxInputTokens,
+      maxOutputTokens: limits.maxOutputTokens,
+      imageInput,
+      toolCall: devModel?.tool_call !== false && (staticModel?.toolCall ?? true),
+      ...(choices ? { choices } : {}),
+      ...(staticModel?.defaultMaxTokens
+        ? { defaultMaxTokens: staticModel.defaultMaxTokens }
+        : {}),
+    });
+  }
+  return models;
+}
+
+function firstPositive(...values: (number | undefined)[]): number {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+      return value;
+    }
+  }
+  return 0;
+}
+
+/**
+ * The static catalog, used when the live list cannot be fetched. It keeps the
+ * picker usable offline, at the cost of possibly listing a model the account
+ * cannot reach.
+ */
+function buildStaticCatalog(): ModelInfo[] {
+  return SUPPORTED_MODELS.map((model) => {
+    const limits = tokenLimits(model.contextLength, model.maxOutputTokens);
+    return {
+      ...model,
+      contextLength: limits.maxContextWindowTokens,
+      maxInputTokens: limits.maxInputTokens,
+      maxOutputTokens: limits.maxOutputTokens,
+    };
+  });
+}
+
+function catalogScope(baseUrl: string, apiKey: string): string {
+  // Bind the cache to the endpoint AND account without persisting the API key.
+  return createHash("sha256")
+    .update(
+      JSON.stringify([baseUrl.trim().replace(/\/+$/, ""), apiKey.trim()]),
+    )
+    .digest("hex");
+}
+
+interface PersistedCatalog {
+  scope?: string;
+  devCache?: unknown;
+  models?: unknown;
+}
+
+function readPersistedCatalog(
+  globalState: vscode.Memento,
+  scope: string,
+): {
+  devCache: ModelsDevCache | undefined;
+  models: ModelInfo[];
+} {
+  try {
+    const cached = globalState.get<PersistedCatalog>(MODEL_CATALOG_CACHE_KEY);
+    if (cached?.scope !== scope) {
+      return { devCache: undefined, models: [] };
+    }
+    const devCache = isValidDevCache(cached?.devCache)
+      ? cached.devCache
+      : undefined;
+    const models = Array.isArray(cached?.models)
+      ? cached.models.filter(isValidPersistedModel)
+      : [];
+    return { devCache, models };
+  } catch {
+    return { devCache: undefined, models: [] };
+  }
+}
+
+function isValidDevCache(value: unknown): value is ModelsDevCache {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as { models?: unknown };
+  return (
+    !!candidate.models &&
+    typeof candidate.models === "object" &&
+    !Array.isArray(candidate.models)
+  );
+}
+
+function isValidPersistedModel(value: unknown): value is ModelInfo {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.id !== "string" ||
+    typeof candidate.name !== "string" ||
+    typeof candidate.contextLength !== "number" ||
+    typeof candidate.maxInputTokens !== "number" ||
+    typeof candidate.maxOutputTokens !== "number" ||
+    typeof candidate.imageInput !== "boolean"
+  ) {
+    return false;
+  }
+  if (candidate.choices !== undefined && !isValidPersistedChoices(candidate.choices)) {
+    return false;
+  }
+  return true;
+}
+
+function isValidPersistedChoices(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as { values?: unknown; defaultValue?: unknown };
+  return (
+    Array.isArray(candidate.values) &&
+    candidate.values.every((entry) => typeof entry === "string") &&
+    typeof candidate.defaultValue === "string"
+  );
 }

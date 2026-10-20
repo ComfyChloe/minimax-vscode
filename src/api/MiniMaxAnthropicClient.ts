@@ -204,6 +204,18 @@ function fromAnthropicEvent(
     }
     // No-op events in the message stream. We just pass them through.
     case "message_start": {
+      // The prompt token count arrives with the first event.
+      const usage = (event as { message?: { usage?: { input_tokens?: number } } })
+        .message?.usage;
+      if (usage && typeof usage.input_tokens === "number") {
+        return [
+          {
+            kind: "usage",
+            inputTokens: usage.input_tokens,
+            outputTokens: 0,
+          },
+        ];
+      }
       return [];
     }
     case "content_block_delta": {

@@ -2,7 +2,7 @@
   "name": "minimax-vscode",
   "displayName": "MiniMax (coding)",
   "description": "Language model provider for GitHub Copilot in VS Code: use MiniMax text models for programming with a Token Plan API key. Does not add speech, video, or image generation APIs.",
-  "version": "1.5.9",
+  "version": "1.6.0",
   "publisher": "denizhandaklr",
   "license": "MIT",
   "icon": "icon/icon.png",
@@ -72,6 +72,10 @@
         "title": "MiniMax: Select Thinking Depth (M3.1 Flash)"
       },
       {
+        "command": "minimax.refreshModels",
+        "title": "MiniMax: Refresh Models"
+      },
+      {
         "command": "minimax.generateCommitMessage",
         "title": "MiniMax: Generate Commit Message",
         "icon": "$(sparkle)",
@@ -125,33 +129,12 @@
         "minimax.visibleModels": {
           "type": "array",
           "items": {
-            "type": "string",
-            "enum": [
-              "MiniMax-M3.1-Flash",
-              "MiniMax-M3",
-              "MiniMax-M2.7",
-              "MiniMax-M2.7-highspeed",
-              "MiniMax-M2.5",
-              "MiniMax-M2.5-highspeed",
-              "MiniMax-M2.1",
-              "MiniMax-M2.1-highspeed",
-              "MiniMax-M2"
-            ]
+            "type": "string"
           },
-          "default": [
-            "MiniMax-M3.1-Flash",
-            "MiniMax-M3",
-            "MiniMax-M2.7",
-            "MiniMax-M2.7-highspeed",
-            "MiniMax-M2.5",
-            "MiniMax-M2.5-highspeed",
-            "MiniMax-M2.1",
-            "MiniMax-M2.1-highspeed",
-            "MiniMax-M2"
-          ],
+          "default": [],
           "uniqueItems": true,
           "scope": "application",
-          "markdownDescription": "Programming text models (M3.1 Flash / M3 / M2 / M2.1 / M2.5 / M2.7) for Token Plan. `MiniMax-M3.1-Flash-Preview` is accepted as an alias for `MiniMax-M3.1-Flash`. Role-play (M2-her) is not included."
+          "markdownDescription": "Live MiniMax model ids to show in the picker (from `GET {apiBaseUrl}/models`). Empty means show every live model. `MiniMax-M3.1-Flash-Preview` is accepted as an alias for `MiniMax-M3.1-Flash`."
         },
         "minimax.thinkingEnabled": {
           "type": "boolean",
@@ -255,7 +238,7 @@
     "package:allow-missing-repository": "vsce package --no-dependencies --allow-missing-repository",
     "watch:esbuild": "node esbuild.mjs --watch",
     "watch:tsc": "tsc -p ./ --noEmit --watch",
-    "test": "node ./out/test/runTest.js"
+    "test": "node test/run-tests.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
