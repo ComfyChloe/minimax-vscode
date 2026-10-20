@@ -5,8 +5,10 @@ import { promisify } from "util";
 const execFileAsync = promisify(execFile);
 const MAX_DIFF_CHARS = 16_000;
 const COMMAND_ID = "minimax.generateCommitMessage";
-const PREFERRED_MODEL_ID = "MiniMax-M2.7-highspeed";
-const PREFERRED_MODEL_LABEL = "M2.7 (High-Speed)";
+// M3.1 Flash is the current fast-coding model; the M2.7 family it replaces is
+// scheduled for retirement (Nov 18, 2026).
+const PREFERRED_MODEL_ID = "MiniMax-M3.1-Flash";
+const PREFERRED_MODEL_LABEL = "M3.1 Flash";
 
 interface GitSnapshot {
   diff: string;

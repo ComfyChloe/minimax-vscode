@@ -35,6 +35,12 @@ export interface ProviderChatOptions {
    *   take effect; this is what "auto" mode resolves to).
    */
   thinking?: { type: "adaptive" } | { type: "disabled" };
+  /**
+   * Thinking depth for models that support a tunable reasoning depth
+   * (currently only `MiniMax-M3.1-Flash`). `undefined` leaves the field off
+   * the wire so the endpoint applies its own default.
+   */
+  reasoningEffort?: import("./types").ReasoningEffort;
   serviceTier?: "standard" | "priority";
   cancellationToken?: vscode.CancellationToken;
   // Provider-specific message format. Adapters are responsible for translating

@@ -84,10 +84,20 @@ export class MiniMaxOpenAIClient implements MinimaxStreamClient {
       // reasoning_split=true so any thinking the model emits is still
       // surfaced as a structured reasoning_content / reasoning_details field.
       (params as ChatCompletionCreateParamsStreaming & {
-        extra_body?: { reasoning_split?: boolean; thinking?: { type: "disabled" | "adaptive" } };
+        extra_body?: {
+          reasoning_split?: boolean;
+          thinking?: { type: "disabled" | "adaptive" };
+          reasoning_effort?: string;
+        };
       }).extra_body = {
         reasoning_split: options.reasoningSplit ?? true,
         ...(options.thinking ? { thinking: options.thinking } : {}),
+        // Thinking depth (MiniMax-M3.1-Flash only). The OpenAI-compatible
+        // endpoint names it `reasoning_effort`; omitting it leaves the
+        // endpoint default (currently `max`) in place.
+        ...(options.reasoningEffort
+          ? { reasoning_effort: options.reasoningEffort }
+          : {}),
       };
       params.stream_options = { include_usage: true };
       if (options.serviceTier && options.serviceTier === "priority") {

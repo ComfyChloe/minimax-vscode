@@ -101,6 +101,16 @@ export class MiniMaxAnthropicClient implements MinimaxStreamClient {
         (params as AnthropicMessageParams & { thinking?: MiniMaxThinking }).thinking =
           options.thinking;
       }
+      // Thinking depth (MiniMax-M3.1-Flash only). Sent as
+      // `output_config: { effort }`; omitting it leaves the endpoint default
+      // (currently `max`) in place.
+      if (options.reasoningEffort) {
+        (
+          params as AnthropicMessageParams & {
+            output_config?: { effort?: string };
+          }
+        ).output_config = { effort: options.reasoningEffort };
+      }
       if (options.serviceTier) {
         // Anthropic's typed streaming `service_tier` enum is "auto" | "standard_only",
         // but MiniMax documents `service_tier: "standard" | "priority"`. Cast the

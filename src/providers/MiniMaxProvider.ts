@@ -9,14 +9,18 @@ import {
   getApiBaseUrl,
   getAnthropicBaseUrl,
   getApiFormat,
+  getReasoningEffort,
   getThinkingMode,
+  isReasoningEffortSetting,
   isThinkingMode,
   modelsWithApiKey,
   resolveMaxTokens,
+  resolveReasoningEffort,
   resolveTemperature,
   resolveThinkingControl,
   resolveTopP,
   setApiFormat,
+  setReasoningEffort,
   setThinkingMode,
   type ApiFormat,
   type ThinkingMode,
@@ -181,6 +185,7 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
     const client = this.createClient();
     const thinkingMode = getThinkingMode();
     const thinkingControl = resolveThinkingControl(thinkingMode, resolvedModel, getApiFormat());
+    const reasoningEffort = resolveReasoningEffort(resolvedModel);
     const stream = client.streamChat({
       apiKey,
       model: resolveModelIdForApi(resolvedModel.id),
@@ -191,6 +196,7 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
       toolChoice: toolChoice ?? "auto",
       reasoningSplit: true,
       ...(thinkingControl ? { thinking: thinkingControl } : {}),
+      ...(reasoningEffort ? { reasoningEffort } : {}),
       cancellationToken: token,
       messages: nonSystemMessages,
       systemPrompt: systemParts.join("\n\n") || undefined,
@@ -364,6 +370,11 @@ export class MiniMaxProvider implements vscode.LanguageModelChatProvider {
           await setThinkingMode(mapped);
         }
       }
+    }
+
+    const effort = config.reasoningEffort;
+    if (isReasoningEffortSetting(effort) && effort !== getReasoningEffort()) {
+      await setReasoningEffort(effort);
     }
   }
 

@@ -2,7 +2,7 @@
   "name": "minimax-vscode",
   "displayName": "MiniMax (coding)",
   "description": "Language model provider for GitHub Copilot in VS Code: use MiniMax text models for programming with a Token Plan API key. Does not add speech, video, or image generation APIs.",
-  "version": "1.5.8",
+  "version": "1.5.9",
   "publisher": "denizhandaklr",
   "license": "MIT",
   "icon": "icon/icon.png",
@@ -25,6 +25,7 @@
   "keywords": [
     "ai",
     "minimax",
+    "minimax m3.1 flash",
     "minimax m3.1",
     "minimax m3",
     "minimax m2.7",
@@ -65,6 +66,10 @@
       {
         "command": "minimax.toggleThinking",
         "title": "MiniMax: Toggle Thinking (M3)"
+      },
+      {
+        "command": "minimax.selectReasoningEffort",
+        "title": "MiniMax: Select Thinking Depth (M3.1 Flash)"
       },
       {
         "command": "minimax.generateCommitMessage",
@@ -122,7 +127,7 @@
           "items": {
             "type": "string",
             "enum": [
-              "MiniMax-M3.1-Flash-Preview",
+              "MiniMax-M3.1-Flash",
               "MiniMax-M3",
               "MiniMax-M2.7",
               "MiniMax-M2.7-highspeed",
@@ -134,7 +139,7 @@
             ]
           },
           "default": [
-            "MiniMax-M3.1-Flash-Preview",
+            "MiniMax-M3.1-Flash",
             "MiniMax-M3",
             "MiniMax-M2.7",
             "MiniMax-M2.7-highspeed",
@@ -146,13 +151,35 @@
           ],
           "uniqueItems": true,
           "scope": "application",
-          "markdownDescription": "Programming text models (M2 / M2.1 / M2.5 / M2.7) for Token Plan. Order matches [MiniMax M2.7 for AI coding](https://platform.minimax.io/docs/guides/text-ai-coding-tools). Role-play (M2-her) is not included."
+          "markdownDescription": "Programming text models (M3.1 Flash / M3 / M2 / M2.1 / M2.5 / M2.7) for Token Plan. `MiniMax-M3.1-Flash-Preview` is accepted as an alias for `MiniMax-M3.1-Flash`. Role-play (M2-her) is not included."
         },
         "minimax.thinkingEnabled": {
           "type": "boolean",
           "default": true,
           "scope": "application",
-          "markdownDescription": "Enable thinking/reasoning output. Setting this to `false` sends `thinking: {\"type\": \"disabled\"}` for M3 (faster, no reasoning tokens). M2.x models always emit thinking regardless of this setting."
+          "markdownDescription": "Enable thinking/reasoning output. Setting this to `false` sends `thinking: {\"type\": \"disabled\"}` for M3 (faster, no reasoning tokens). M2.x and M3.1 Flash models always emit thinking regardless of this setting."
+        },
+        "minimax.reasoningEffort": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "enumDescriptions": [
+            "Leave the field off the wire — the endpoint applies its own default (currently `max`).",
+            "Fastest, shallowest reasoning.",
+            "Balanced reasoning depth.",
+            "Deeper reasoning, more thinking tokens.",
+            "Very deep reasoning.",
+            "Deepest reasoning (the current endpoint default)."
+          ],
+          "default": "auto",
+          "scope": "application",
+          "markdownDescription": "Thinking depth for `MiniMax-M3.1-Flash`. Sent as `output_config.effort` (Anthropic SDK) or `reasoning_effort` (OpenAI SDK). Other models ignore this setting."
         }
       }
     },
@@ -187,7 +214,29 @@
               "type": "boolean",
               "title": "Thinking (M3)",
               "default": true,
-              "description": "Enable thinking/reasoning output for MiniMax-M3. M2.x models always emit thinking."
+              "description": "Enable thinking/reasoning output for MiniMax-M3. M2.x and M3.1 Flash models always emit thinking."
+            },
+            "reasoningEffort": {
+              "type": "string",
+              "title": "Thinking depth (M3.1 Flash)",
+              "enum": [
+                "auto",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "enumDescriptions": [
+                "Auto — let the endpoint decide (currently max)",
+                "Low — fastest, shallowest reasoning",
+                "Medium — balanced reasoning depth",
+                "High — deeper reasoning, more thinking tokens",
+                "Extra high — very deep reasoning",
+                "Max — deepest reasoning (the current endpoint default)"
+              ],
+              "default": "auto",
+              "description": "Thinking depth for MiniMax-M3.1-Flash. Other models ignore this value."
             }
           },
           "required": [

@@ -11,15 +11,20 @@ import {
   ANTHROPIC_BASE_URL_KEY,
   THINKING_ENABLED_KEY,
   THINKING_MODE_KEY,
+  REASONING_EFFORT_KEY,
   apiFormatLabel,
   getApiFormat,
+  getReasoningEffort,
   getThinkingMode,
   isThinkingEnabled,
+  reasoningEffortLabel,
   setApiFormat,
+  setReasoningEffort,
   setThinkingMode,
   thinkingModeDescription,
   thinkingModeLabel,
   type ApiFormat,
+  type ReasoningEffortSetting,
   type ThinkingMode,
 } from "./utils/ModelConfig";
 
@@ -47,7 +52,8 @@ export function activate(context: vscode.ExtensionContext): void {
         event.affectsConfiguration(`${CONFIG_SECTION}.${API_FORMAT_KEY}`) ||
         event.affectsConfiguration(`${CONFIG_SECTION}.${ANTHROPIC_BASE_URL_KEY}`) ||
         event.affectsConfiguration(`${CONFIG_SECTION}.${THINKING_ENABLED_KEY}`) ||
-        event.affectsConfiguration(`${CONFIG_SECTION}.${THINKING_MODE_KEY}`)
+        event.affectsConfiguration(`${CONFIG_SECTION}.${THINKING_MODE_KEY}`) ||
+        event.affectsConfiguration(`${CONFIG_SECTION}.${REASONING_EFFORT_KEY}`)
       ) {
         provider.notifyModelsChanged();
       }
@@ -68,6 +74,12 @@ export function activate(context: vscode.ExtensionContext): void {
         // Legacy boolean fallback for users still on the old key.
         vscode.window.setStatusBarMessage(
           `MiniMax: Thinking ${isThinkingEnabled() ? "enabled" : "disabled"} (M3)`,
+          5000,
+        );
+      }
+      if (event.affectsConfiguration(`${CONFIG_SECTION}.${REASONING_EFFORT_KEY}`)) {
+        vscode.window.setStatusBarMessage(
+          `MiniMax: Thinking depth set to ${reasoningEffortLabel(getReasoningEffort())} (M3.1 Flash)`,
           5000,
         );
       }
@@ -148,6 +160,46 @@ export function activate(context: vscode.ExtensionContext): void {
       provider.notifyModelsChanged();
       vscode.window.showInformationMessage(
         `MiniMax: Thinking set to ${thinkingModeLabel(picked.mode)}.`,
+      );
+    }),
+    vscode.commands.registerCommand("minimax.selectReasoningEffort", async () => {
+      const current = getReasoningEffort();
+      const options: { effort: ReasoningEffortSetting; label: string; description: string }[] = [
+        {
+          effort: "auto",
+          label: "$(settings-gear) Auto",
+          description: "Let the endpoint decide (M3.1 Flash currently defaults to max)",
+        },
+        { effort: "low", label: "$(chevron-down) Low", description: "Fastest, shallowest reasoning" },
+        { effort: "medium", label: "$(circle-outline) Medium", description: "Balanced reasoning depth" },
+        { effort: "high", label: "$(chevron-up) High", description: "Deeper reasoning, more tokens" },
+        { effort: "xhigh", label: "$(arrow-up) Extra high", description: "Very deep reasoning" },
+        { effort: "max", label: "$(flame) Max", description: "Deepest reasoning (the endpoint default)" },
+      ];
+      const picked = await vscode.window.showQuickPick(
+        options.map((entry) => ({
+          label: entry.label,
+          description: entry.description,
+          detail: current === entry.effort ? "$(check) Currently active" : undefined,
+          effort: entry.effort,
+        })),
+        {
+          placeHolder: `Select the thinking depth for MiniMax-M3.1-Flash (current: ${reasoningEffortLabel(current)})`,
+        },
+      );
+      if (!picked) {
+        return;
+      }
+      if (picked.effort === current) {
+        vscode.window.showInformationMessage(
+          `MiniMax: Thinking depth already set to ${reasoningEffortLabel(current)}.`,
+        );
+        return;
+      }
+      await setReasoningEffort(picked.effort);
+      provider.notifyModelsChanged();
+      vscode.window.showInformationMessage(
+        `MiniMax: Thinking depth set to ${reasoningEffortLabel(picked.effort)} (M3.1 Flash).`,
       );
     }),
     vscode.commands.registerCommand("minimax.clearApiKey", async () => {

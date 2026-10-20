@@ -2,8 +2,10 @@
 import {
   SUPPORTED_MODELS,
   getModelById,
+  resolveLegacyModelId,
   type ModelId,
   type ModelInfo,
+  type ReasoningEffort,
 } from "../api/types";
 
 export const CONFIG_SECTION = "minimax";
@@ -17,6 +19,7 @@ export const API_BASE_URL_KEY = "apiBaseUrl";
  */
 export const THINKING_ENABLED_KEY = "thinkingEnabled";
 export const THINKING_MODE_KEY = "thinkingMode";
+export const REASONING_EFFORT_KEY = "reasoningEffort";
 export const API_FORMAT_KEY = "apiFormat";
 export const ANTHROPIC_BASE_URL_KEY = "anthropicBaseUrl";
 export const DEFAULT_TEMPERATURE = 1;
@@ -93,9 +96,9 @@ export function thinkingModeLabel(mode: ThinkingMode): string {
 export function thinkingModeDescription(mode: ThinkingMode): string {
   switch (mode) {
     case "off":
-      return "Disable thinking for M3 (faster, no reasoning tokens). M2.x cannot disable thinking.";
+      return "Disable thinking for M3 (faster, no reasoning tokens). M2.x and M3.1 Flash cannot disable thinking.";
     case "adaptive":
-      return "Always-on thinking for M3 (`thinking: {\"type\":\"adaptive\"}`). M2.x always thinks.";
+      return "Always-on thinking for M3 (`thinking: {\"type\":\"adaptive\"}`). M2.x and M3.1 Flash always think.";
     case "auto":
       return "Use the endpoint default — Anthropic: off for M3, on for M2.x. OpenAI: on for M3, on for M2.x.";
   }
@@ -114,8 +117,8 @@ export function resolveThinkingControl(
   model: ModelInfo,
   format: ApiFormat,
 ): { type: "adaptive" } | { type: "disabled" } | undefined {
-  // M3.1 Flash Preview requires reasoning; disabling it returns HTTP 400.
-  if (model.id === "MiniMax-M3.1-Flash-Preview") {
+  // M3.1 Flash requires reasoning; disabling it returns HTTP 400.
+  if (model.id === "MiniMax-M3.1-Flash") {
     return { type: "adaptive" };
   }
 
@@ -136,6 +139,74 @@ export function resolveThinkingControl(
   }
   // M2.x cannot disable thinking; auto → omit so the endpoint defaults to ON.
   return undefined;
+}
+
+/**
+ * Thinking-depth levels offered for models that support them.
+ *
+ * `auto` leaves the field off the wire so the endpoint applies its own
+ * default (currently `max` for M3.1 Flash).
+ */
+export type ReasoningEffortSetting = "auto" | ReasoningEffort;
+
+const REASONING_EFFORT_SETTINGS: readonly ReasoningEffortSetting[] = [
+  "auto",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
+
+export function isReasoningEffortSetting(
+  value: unknown,
+): value is ReasoningEffortSetting {
+  return (
+    typeof value === "string" &&
+    (REASONING_EFFORT_SETTINGS as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * The configured thinking depth. `auto` (the default) omits the field so the
+ * endpoint decides, which for M3.1 Flash means `max`.
+ */
+export function getReasoningEffort(): ReasoningEffortSetting {
+  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+  const value = config.get<unknown>(REASONING_EFFORT_KEY);
+  return isReasoningEffortSetting(value) ? value : "auto";
+}
+
+export async function setReasoningEffort(
+  effort: ReasoningEffortSetting,
+): Promise<void> {
+  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+  await config.update(
+    REASONING_EFFORT_KEY,
+    effort,
+    vscode.ConfigurationTarget.Global,
+  );
+}
+
+export function reasoningEffortLabel(effort: ReasoningEffortSetting): string {
+  return effort === "auto" ? "Auto" : effort.toUpperCase();
+}
+
+/**
+ * Resolve the wire-format thinking depth for a model.
+ *
+ * Only M3.1 Flash exposes a tunable depth (`output_config.effort` on the
+ * Anthropic-compatible endpoint, `reasoning_effort` on the OpenAI-compatible
+ * one). Every other model returns `undefined`, so nothing extra is sent.
+ */
+export function resolveReasoningEffort(
+  model: ModelInfo,
+): ReasoningEffort | undefined {
+  if (model.id !== "MiniMax-M3.1-Flash") {
+    return undefined;
+  }
+  const effort = getReasoningEffort();
+  return effort === "auto" ? undefined : effort;
 }
 
 /**
@@ -214,13 +285,14 @@ export function modelsWithApiKey(): vscode.LanguageModelChatInformation[] {
       : mode === "adaptive"
         ? "thinking on (adaptive)"
         : `thinking ${mode}`;
+  const effort = getReasoningEffort();
   return visibleModels.map(
     (model) =>
       ({
         id: model.id,
         name: model.name,
         detail: `Token Plan · ${sdkLabel}`,
-        tooltip: `${model.name} -- in ${model.maxInputTokens.toLocaleString()} / out ${model.maxOutputTokens.toLocaleString()} max tokens (context up to ${model.contextLength.toLocaleString()}) · ${sdkLabel}${model.id === "MiniMax-M3.1-Flash-Preview" ? " · thinking always on" : model.id === "MiniMax-M3" ? ` · ${thinkingLabel}` : ""}`,
+        tooltip: `${model.name} -- in ${model.maxInputTokens.toLocaleString()} / out ${model.maxOutputTokens.toLocaleString()} max tokens (context up to ${model.contextLength.toLocaleString()}) · ${sdkLabel}${model.id === "MiniMax-M3.1-Flash" ? ` · thinking always on${effort === "auto" ? "" : ` · effort ${effort}`}` : model.id === "MiniMax-M3" ? ` · ${thinkingLabel}` : ""}`,
         family: "minimax",
         version: getModelVersion(model.id),
         maxInputTokens: model.maxInputTokens,
@@ -228,8 +300,7 @@ export function modelsWithApiKey(): vscode.LanguageModelChatInformation[] {
         isUserSelectable: true,
         capabilities: {
           toolCalling: true,
-          imageInput:
-            model.id === "MiniMax-M3.1-Flash-Preview" || model.id === "MiniMax-M3",
+          imageInput: model.id === "MiniMax-M3.1-Flash" || model.id === "MiniMax-M3",
         },
       }) as vscode.LanguageModelChatInformation,
   );
@@ -237,8 +308,8 @@ export function modelsWithApiKey(): vscode.LanguageModelChatInformation[] {
 
 function getModelVersion(modelId: ModelInfo["id"]): string {
   switch (modelId) {
-    case "MiniMax-M3.1-Flash-Preview":
-      return "3.1-flash-preview";
+    case "MiniMax-M3.1-Flash":
+      return "3.1-flash";
     case "MiniMax-M3":
       return "3";
     case "MiniMax-M2.7":
@@ -268,6 +339,9 @@ function getVisibleModels(): readonly ModelInfo[] {
   const configuredIds = new Set(
     raw
       .filter((value): value is string => typeof value === "string")
+      // Model ids that were renamed (e.g. the M3.1 Flash preview) still
+      // resolve, so an existing `visibleModels` list keeps working.
+      .map((id) => resolveLegacyModelId(id))
       .filter((id) => getModelById(id) !== undefined),
   );
   const visibleModels = SUPPORTED_MODELS.filter((model) => configuredIds.has(model.id));
@@ -282,7 +356,7 @@ export function resolveMaxTokens(
   const base =
     typeof value === "number" && Number.isInteger(value) && value > 0
       ? value
-      : DEFAULT_MAX_TOKENS;
+      : (model.defaultMaxTokens ?? DEFAULT_MAX_TOKENS);
   return Math.min(base, model.maxOutputTokens);
 }
 
