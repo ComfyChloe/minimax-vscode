@@ -20,9 +20,10 @@ import {
 } from "../modelsDev";
 import { convertMessages } from "../utils/MessageConverter";
 import {
-  getApiBaseUrl,
   getAnthropicBaseUrl,
+  getApiBaseUrl,
   getApiFormat,
+  getCatalogBaseUrl,
   getReasoningEffort,
   getThinkingMode,
   isReasoningEffortSetting,
@@ -130,7 +131,7 @@ export class MiniMaxProvider
     if (!apiKey || apiKey.trim().length === 0) {
       return;
     }
-    const baseUrl = (getApiBaseUrl() ?? DEFAULT_API_BASE_URL).replace(/\/+$/, "");
+    const baseUrl = getCatalogBaseUrl();
     const scope = catalogScope(baseUrl, apiKey.trim());
     const generation = ++this.refreshGeneration;
     if (scope !== this.catalogScope) {
@@ -246,7 +247,7 @@ export class MiniMaxProvider
     await this.syncCatalog(configuredApiKey);
     if (
       this.catalogScope !==
-      catalogScope(getApiBaseUrl() ?? DEFAULT_API_BASE_URL, configuredApiKey)
+      catalogScope(getCatalogBaseUrl(), configuredApiKey)
     ) {
       return [];
     }
@@ -262,7 +263,7 @@ export class MiniMaxProvider
 
   /** Refresh and await a changed account/endpoint before serving its catalog. */
   private async syncCatalog(apiKey: string): Promise<void> {
-    const baseUrl = getApiBaseUrl() ?? DEFAULT_API_BASE_URL;
+    const baseUrl = getCatalogBaseUrl();
     const scope = catalogScope(baseUrl, apiKey);
     if (
       scope === this.catalogScope &&

@@ -3,6 +3,7 @@
 plans/**
 src/**
 test/**
+PUBLISHING.md
 node_modules/**
 tsconfig.json
 esbuild.mjs

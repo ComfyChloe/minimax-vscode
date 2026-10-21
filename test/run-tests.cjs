@@ -68,11 +68,20 @@ const FLASH = "MiniMax-M3.1-Flash";
 const OLD = "MiniMax-M3";
 /** A model id nobody knows yet — exercises the safe default limits. */
 const NEW = "MiniMax-M4-Future";
-const GLOBAL = "https://api.minimax.io/v1";
-const CHINA = "https://api.minimaxi.com/v1";
+/** The Anthropic-compatible endpoints (the default). */
+const GLOBAL = "https://api.minimax.io/anthropic";
+const CHINA = "https://api.minimaxi.com/anthropic";
+/** The OpenAI-compatible endpoints (the alternative). */
+const GLOBAL_OPENAI = "https://api.minimax.io/v1";
+const CHINA_OPENAI = "https://api.minimaxi.com/v1";
 const providers = [];
 function reset() {
-  config = { apiBaseUrl: GLOBAL, visibleModels: [] };
+  config = {
+    apiFormat: "anthropic-compat",
+    apiBaseUrl: GLOBAL_OPENAI,
+    anthropicBaseUrl: GLOBAL,
+    visibleModels: [],
+  };
   warnings = [];
   logs = [];
 }
@@ -110,11 +119,17 @@ afterEach(() => {
   global.fetch = originalFetch;
 });
 
-test("live Flash id survives chat filtering; exact regional URL, Bearer key and timeout are used", async () => {
+test("live Flash id survives chat filtering; the exact endpoint URL, the key headers and a timeout are used", async () => {
   reset();
-  for (const base of [GLOBAL, CHINA, "https://api.minimax.cn/v1"]) {
+  for (const base of [
+    `${GLOBAL}/v1`,
+    `${CHINA}/v1`,
+    "https://api.minimax.cn/anthropic/v1",
+  ]) {
     global.fetch = async (url, options) => {
       assert.equal(url, `${base}/models`);
+      // MiniMax accepts the key either way; both are sent.
+      assert.equal(options.headers["X-Api-Key"], "test-key");
       assert.equal(options.headers.Authorization, "Bearer test-key");
       assert.ok(options.signal instanceof AbortSignal);
       return response({
@@ -125,6 +140,38 @@ test("live Flash id survives chat filtering; exact regional URL, Bearer key and 
       { id: FLASH },
     ]);
   }
+});
+
+test("the Anthropic-compatible catalog is read from the Anthropic endpoint, the OpenAI one from its own", async () => {
+  reset();
+  const seen = [];
+  global.fetch = async (url) => {
+    seen.push(String(url));
+    return String(url) === "https://models.dev/api.json"
+      ? response({})
+      : response({ data: [{ id: FLASH }] });
+  };
+  const p = await provider();
+  await list(p);
+  assert.ok(
+    seen.includes("https://api.minimax.io/anthropic/v1/models"),
+    `expected the Anthropic model list, saw ${seen.join(", ")}`,
+  );
+
+  config.apiFormat = "openai-compat";
+  const seen2 = [];
+  global.fetch = async (url) => {
+    seen2.push(String(url));
+    return String(url) === "https://models.dev/api.json"
+      ? response({})
+      : response({ data: [{ id: FLASH }] });
+  };
+  const p2 = await provider();
+  await list(p2);
+  assert.ok(
+    seen2.includes("https://api.minimax.io/v1/models"),
+    `expected the OpenAI model list, saw ${seen2.join(", ")}`,
+  );
 });
 
 test("empty visibleModels shows every live model; explicit subset filters; obsolete-only list falls back", () => {
@@ -173,7 +220,7 @@ test("new live ids appear during metadata outage using defaults, retaining cache
     [{ id: OLD }],
     {
       minimax: {
-        api: GLOBAL,
+        api: `${GLOBAL}/v1`,
         models: {
           [OLD]: { id: OLD, limit: { context: 1000000, output: 500000 } },
         },
@@ -236,11 +283,11 @@ test("persisted cache survives same-scope offline reload but not an endpoint or 
   global.fetch = async () => response({}, 403);
   const reloaded = await provider(storage);
   assert.deepEqual((await list(reloaded)).map((m) => m.id), [NEW]);
-  config.apiBaseUrl = CHINA;
+  config.anthropicBaseUrl = CHINA;
   // The cached catalog belongs to the other endpoint: it must not be reused.
   const switched = await list(reloaded);
   assert.ok(!switched.some((m) => m.id === NEW));
-  config.apiBaseUrl = GLOBAL;
+  config.anthropicBaseUrl = GLOBAL;
   const otherAccount = await list(reloaded, "another-account-key");
   assert.ok(!otherAccount.some((m) => m.id === NEW));
 });
@@ -253,17 +300,17 @@ test("old regional response completing late cannot overwrite the current regiona
   await list(p);
   let release;
   global.fetch = async (url) => {
-    if (url === `${GLOBAL}/models`) {
+    if (url === `${GLOBAL}/v1/models`) {
       return new Promise((resolve) => {
         release = () => resolve(response({ data: [{ id: OLD }] }));
       });
     }
-    if (url === `${CHINA}/models`) return response({ data: [{ id: FLASH }] });
+    if (url === `${CHINA}/v1/models`) return response({ data: [{ id: FLASH }] });
     return response({});
   };
   const stale = p.refreshModels();
   assert.ok(release);
-  config.apiBaseUrl = CHINA;
+  config.anthropicBaseUrl = CHINA;
   await p.refreshModels();
   release();
   await stale;
@@ -328,7 +375,7 @@ test("metadata recovery replaces default limits without waiting for a new model 
     [{ id: NEW }],
     {
       minimax: {
-        api: GLOBAL,
+        api: `${GLOBAL}/v1`,
         models: {
           [NEW]: {
             id: NEW,
@@ -363,7 +410,7 @@ test("M3.1 Flash offers the live effort levels in the picker and never an off sw
     [{ id: FLASH }],
     {
       minimax: {
-        api: GLOBAL,
+        api: `${GLOBAL}/v1`,
         models: {
           [FLASH]: {
             id: FLASH,

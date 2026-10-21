@@ -318,13 +318,16 @@ export function isThinkingEnabled(): boolean {
 export function getApiFormat(): ApiFormat {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
   const value = config.get<unknown>(API_FORMAT_KEY);
-  return value === "anthropic-compat" ? "anthropic-compat" : "openai-compat";
+  // The Anthropic-compatible Messages API is the default: it is the endpoint
+  // MiniMax documents first, and the one every other Anthropic-compatible
+  // client (Claude Code, Codex, Cursor, ...) talks to.
+  return value === "openai-compat" ? "openai-compat" : "anthropic-compat";
 }
 
 export function apiFormatLabel(format: ApiFormat): string {
   return format === "anthropic-compat"
-    ? "Anthropic SDK (Messages API)"
-    : "OpenAI SDK (Chat Completions)";
+    ? "Anthropic API (Messages)"
+    : "OpenAI API (Chat Completions)";
 }
 
 export async function setApiFormat(format: ApiFormat): Promise<void> {
@@ -359,6 +362,20 @@ export function getApiBaseUrl(): string | undefined {
 }
 
 /**
+ * Base URL used to read the live model catalog.
+ *
+ * It follows the endpoint in use: the Anthropic-compatible API exposes its
+ * model list at `{anthropicBaseUrl}/v1/models`, the OpenAI-compatible one at
+ * `{apiBaseUrl}/models`.
+ */
+export function getCatalogBaseUrl(): string {
+  if (getApiFormat() === "anthropic-compat") {
+    return `${getAnthropicBaseUrl().replace(/\/+$/, "")}/v1`;
+  }
+  return (getApiBaseUrl() ?? "https://api.minimax.io/v1").replace(/\/+$/, "");
+}
+
+/**
  * Build the VS Code model picker entries for a catalog.
  *
  * `allModels` is the live catalog (MiniMax's own `/models` list, enriched
@@ -370,7 +387,8 @@ export function modelsWithApiKey(
 ): vscode.LanguageModelChatInformation[] {
   const visibleModels = getVisibleModels(allModels);
   const format = getApiFormat();
-  const sdkLabel = format === "anthropic-compat" ? "Anthropic SDK" : "OpenAI SDK";
+  const sdkLabel =
+    format === "anthropic-compat" ? "Anthropic API" : "OpenAI API";
   const mode = getThinkingMode();
   const thinkingLabel =
     mode === "off"

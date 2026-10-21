@@ -1,15 +1,19 @@
 {
   "name": "minimax-vscode",
-  "displayName": "MiniMax (coding)",
-  "description": "Language model provider for GitHub Copilot in VS Code: use MiniMax text models for programming with a Token Plan API key. Does not add speech, video, or image generation APIs.",
-  "version": "1.6.0",
+  "displayName": "MiniMax (Anthropic API)",
+  "description": "Language model provider for GitHub Copilot in VS Code: use MiniMax text models through the Anthropic-compatible Messages API with a Token Plan API key. Does not add speech, video, or image generation APIs.",
+  "version": "1.7.0",
   "publisher": "denizhandaklr",
   "license": "MIT",
   "icon": "icon/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/zelosleone/minimax-vscode"
+    "url": "https://github.com/ComfyChloe/minimax-vscode"
   },
+  "bugs": {
+    "url": "https://github.com/ComfyChloe/minimax-vscode/issues"
+  },
+  "homepage": "https://github.com/ComfyChloe/minimax-vscode#readme",
   "main": "./out/extension.js",
   "engines": {
     "vscode": "^1.111.0"
@@ -22,9 +26,18 @@
     "AI",
     "Chat"
   ],
+  "pricing": "Free",
+  "galleryBanner": {
+    "color": "#1F2430",
+    "theme": "dark"
+  },
   "keywords": [
     "ai",
     "minimax",
+    "anthropic",
+    "anthropic api",
+    "anthropic compatible",
+    "claude code",
     "minimax m3.1 flash",
     "minimax m3.1",
     "minimax m3",
@@ -103,22 +116,22 @@
         "minimax.apiFormat": {
           "type": "string",
           "enum": [
-            "openai-compat",
-            "anthropic-compat"
+            "anthropic-compat",
+            "openai-compat"
           ],
           "enumDescriptions": [
-            "OpenAI-compatible Chat Completions API at `https://api.minimax.io/v1` (default).",
-            "Anthropic-compatible Messages API at `https://api.minimax.io/anthropic` (recommended by MiniMax docs)."
+            "Anthropic-compatible Messages API at `https://api.minimax.io/anthropic` (default, and the endpoint MiniMax documents first).",
+            "OpenAI-compatible Chat Completions API at `https://api.minimax.io/v1` (legacy alternative)."
           ],
-          "default": "openai-compat",
+          "default": "anthropic-compat",
           "scope": "application",
-          "markdownDescription": "API protocol to use. `anthropic-compat` is the recommended path per MiniMax docs and enables the `count_tokens` endpoint and native thinking blocks. `openai-compat` is the legacy default."
+          "markdownDescription": "API protocol to use. `anthropic-compat` is the default: the same Anthropic Messages API that Claude Code and other Anthropic-compatible clients talk to, with native thinking blocks and the `count_tokens` endpoint. `openai-compat` uses the legacy Chat Completions API. The model picker always shows which endpoint is active."
         },
         "minimax.anthropicBaseUrl": {
           "type": "string",
           "default": "https://api.minimax.io/anthropic",
           "scope": "application",
-          "markdownDescription": "Anthropic-compatible API base URL. Use `https://api.minimax.io/anthropic` for international users or `https://api.minimaxi.com/anthropic` for users in China. Ignored when `minimax.apiFormat` is `openai-compat`."
+          "markdownDescription": "Anthropic-compatible API base URL — the endpoint this extension talks to by default. Use `https://api.minimax.io/anthropic` for international users or `https://api.minimaxi.com/anthropic` for users in China. Ignored when `minimax.apiFormat` is `openai-compat`."
         },
         "minimax.commitMessageGeneration.enabled": {
           "type": "boolean",
@@ -181,17 +194,17 @@
             },
             "apiFormat": {
               "type": "string",
-              "title": "API endpoint (SDK)",
+              "title": "API endpoint",
               "enum": [
-                "openai-compat",
-                "anthropic-compat"
+                "anthropic-compat",
+                "openai-compat"
               ],
               "enumDescriptions": [
-                "OpenAI SDK — Chat Completions API at api.minimax.io/v1 (legacy default)",
-                "Anthropic SDK — Messages API at api.minimax.io/anthropic (recommended by MiniMax)"
+                "Anthropic API — Messages API at api.minimax.io/anthropic (default)",
+                "OpenAI API — Chat Completions at api.minimax.io/v1 (legacy alternative)"
               ],
-              "default": "openai-compat",
-              "description": "Which protocol/SDK to use for requests. Anthropic is the path recommended by MiniMax docs (native thinking blocks, count_tokens)."
+              "default": "anthropic-compat",
+              "description": "Which protocol to use for requests. Anthropic is the default — the same Messages API that Claude Code and other Anthropic-compatible clients use (native thinking blocks, count_tokens)."
             },
             "thinkingEnabled": {
               "type": "boolean",
@@ -236,6 +249,8 @@
     "bundle": "node esbuild.mjs --production",
     "package": "vsce package --no-dependencies",
     "package:allow-missing-repository": "vsce package --no-dependencies --allow-missing-repository",
+    "publish": "vsce publish --no-dependencies",
+    "publish:pat": "vsce publish --no-dependencies --pat",
     "watch:esbuild": "node esbuild.mjs --watch",
     "watch:tsc": "tsc -p ./ --noEmit --watch",
     "test": "node test/run-tests.cjs"

@@ -245,6 +245,7 @@ interface ModelsApiShape {
   data?: Array<{
     id?: unknown;
     name?: unknown;
+    display_name?: unknown;
     context_window?: unknown;
     max_output_tokens?: unknown;
     input_modalities?: unknown;
@@ -258,7 +259,14 @@ function readPositiveInt(value: unknown): number | undefined {
 }
 
 /**
- * `GET {baseUrl}/models` with a Bearer key; returns chat-model entries only.
+ * `GET {baseUrl}/models` with the API key; returns chat-model entries only.
+ *
+ * Works for both endpoints: the Anthropic-compatible one
+ * (`{anthropicBaseUrl}/v1/models`) and the OpenAI-compatible one
+ * (`{apiBaseUrl}/models`). MiniMax accepts the key as `X-Api-Key` (the
+ * Anthropic convention) or as `Authorization: Bearer` (the OpenAI one), so
+ * both are sent.
+ *
  * Throws on network/HTTP errors so the caller can keep the last good list.
  */
 export async function fetchLiveModelCatalog(
@@ -274,6 +282,7 @@ export async function fetchLiveModelCatalog(
     method: "GET",
     signal: AbortSignal.timeout(20_000),
     headers: {
+      "X-Api-Key": apiKey,
       Authorization: `Bearer ${apiKey}`,
       Accept: "application/json",
     },
@@ -294,8 +303,10 @@ export async function fetchLiveModelCatalog(
       continue;
     }
     const entry: LiveModelEntry = { id: item.id };
-    if (typeof item.name === "string" && item.name.length > 0) {
-      entry.name = item.name;
+    // The Anthropic-compatible endpoint calls it `display_name`.
+    const name = typeof item.name === "string" ? item.name : item.display_name;
+    if (typeof name === "string" && name.length > 0) {
+      entry.name = name;
     }
     const contextWindow = readPositiveInt(item.context_window);
     if (contextWindow !== undefined) {

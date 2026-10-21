@@ -110,14 +110,14 @@ export function activate(context: vscode.ExtensionContext): void {
       const picked = await vscode.window.showQuickPick(
         [
           {
-            label: "Anthropic SDK (Messages API)",
-            description: "api.minimax.io/anthropic — recommended by MiniMax; native thinking blocks, count_tokens",
+            label: "Anthropic API (Messages)",
+            description: "api.minimax.io/anthropic — default; native thinking blocks, count_tokens",
             detail: current === "anthropic-compat" ? "$(check) Currently active" : undefined,
             format: "anthropic-compat" as ApiFormat,
           },
           {
-            label: "OpenAI SDK (Chat Completions)",
-            description: "api.minimax.io/v1 — legacy default",
+            label: "OpenAI API (Chat Completions)",
+            description: "api.minimax.io/v1 — legacy alternative",
             detail: current === "openai-compat" ? "$(check) Currently active" : undefined,
             format: "openai-compat" as ApiFormat,
           },
