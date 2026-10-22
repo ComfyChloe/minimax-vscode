@@ -4,6 +4,8 @@ Use MiniMax models in GitHub Copilot Chat in VS Code, over the **Anthropic-compa
 
 Point VS Code at `https://api.minimax.io/anthropic`, paste your MiniMax Token Plan key, and pick a model.
 
+> **Marketplace:** `ComfyChloe.minimax-anthropic` — an independent build, published by [ComfyChloe](https://github.com/ComfyChloe). The original extension is `DenizhanDaklr.minimax-vscode`; both are available, so you can pick whichever endpoint story you prefer. See [Relationship to the original extension](#relationship-to-the-original-extension).
+
 ## Why the Anthropic API?
 
 MiniMax publishes an Anthropic-compatible endpoint next to its OpenAI-compatible one. This extension uses the Anthropic one by default, because it is the better of the two:
@@ -59,6 +61,20 @@ The endpoint and thinking mode can be set three ways:
 | `minimax.commitMessageGeneration.enabled` | `true` | Show the MiniMax sparkle in the SCM commit-message input. Disable to hide the inline button without uninstalling the extension. |
 
 `MiniMax: Switch to Global/Chinese API` updates both base URLs at once.
+
+### Commands
+
+All commands are namespaced under `minimaxAnthropic.` so they can live next to the original extension's commands without a clash.
+
+| Command | What it does |
+|---|---|
+| `MiniMax: Select API Endpoint (OpenAI / Anthropic SDK)` | Switch between the Anthropic Messages API and the OpenAI Chat Completions API. |
+| `MiniMax: Toggle Thinking (M3)` | Turn thinking on/off for M3. |
+| `MiniMax: Select Thinking Depth (M3.1 Flash)` | Pick the fallback thinking depth (`low` … `max`). |
+| `MiniMax: Refresh Models` | Re-read the model list from the API. |
+| `MiniMax: Switch to Global API` / `MiniMax: Switch to Chinese API` | Move both base URLs between regions. |
+| `MiniMax: Clear Stored API Key` | Forget the stored key. |
+| `MiniMax: Generate Commit Message` | Write a Conventional Commit message from your staged diff. |
 
 ## Model catalog
 
@@ -131,7 +147,17 @@ The picker shows the models your account can use (live list). The table below is
 
 ## Relationship to the original extension
 
-This is an independent build of the MiniMax VS Code provider. It adds the Anthropic-compatible endpoint as the default, the live model catalog, the SCM commit-message generator, and per-model reasoning effort. The original lives at [zelosleone/minimax-vscode](https://github.com/zelosleone/minimax-vscode) and is published on the Marketplace as **MiniMax (coding)** — this one is the Anthropic-API-focused variant, so you can pick whichever endpoint story you prefer.
+This is an independent build of the MiniMax VS Code provider, published as **MiniMax (Anthropic API)** (`ComfyChloe.minimax-anthropic`) by [ComfyChloe](https://github.com/ComfyChloe). It is not affiliated with, and is not published by, the author of the original.
+
+What this build does differently:
+
+- **Anthropic-compatible API by default** — the original is OpenAI-compatible only.
+- **Live model catalog** from MiniMax's own API, enriched with models.dev, so new models appear without an extension update.
+- **Per-model reasoning effort** in the model picker.
+- **SCM commit-message generation** from your staged diff.
+- **Its own vendor id** (`minimax-anthropic`) and its own command ids (`minimaxAnthropic.*`), so both extensions can be installed side by side without fighting over the model picker or the command palette.
+
+The original lives at [zelosleone/minimax-vscode](https://github.com/zelosleone/minimax-vscode) and is published on the Marketplace as **MiniMax (coding)** (`DenizhanDaklr.minimax-vscode`). If you prefer the OpenAI-compatible endpoint, or the live catalog the original already ships, that one is a fine choice too.
 
 ## Privacy
 

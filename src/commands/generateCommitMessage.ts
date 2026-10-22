@@ -1,10 +1,11 @@
 import * as vscode from "vscode";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { VENDOR_ID } from "../api/types";
 
 const execFileAsync = promisify(execFile);
 const MAX_DIFF_CHARS = 16_000;
-const COMMAND_ID = "minimax.generateCommitMessage";
+const COMMAND_ID = "minimaxAnthropic.generateCommitMessage";
 // M3.1 Flash is the current fast-coding model; the M2.7 family it replaces is
 // scheduled for retirement (Nov 18, 2026).
 const PREFERRED_MODEL_ID = "MiniMax-M3.1-Flash";
@@ -196,7 +197,7 @@ async function collectGitSnapshot(root: string): Promise<GitSnapshot> {
 }
 
 async function pickMiniMaxModel(): Promise<vscode.LanguageModelChat | undefined> {
-  const all = await vscode.lm.selectChatModels({ vendor: "minimax" });
+  const all = await vscode.lm.selectChatModels({ vendor: VENDOR_ID });
   if (all.length === 0) {
     void vscode.window.showErrorMessage(
       "MiniMax: no chat model is registered. Set the API key in the Chat panel model picker first.",

@@ -1,5 +1,15 @@
 import type { ReasoningChoices } from "../modelsDev";
 
+/**
+ * The vendor id this extension registers its language model provider under.
+ *
+ * It is deliberately not `minimax`: the original extension (published as
+ * `DenizhanDaklr.minimax-vscode`) registers that one, and two providers with
+ * the same vendor id would collide in the model picker. With its own id, both
+ * extensions can be installed side by side.
+ */
+export const VENDOR_ID = "minimax-anthropic";
+
 export interface MiniMaxReasoningDetail {
   text: string;
   id?: string;

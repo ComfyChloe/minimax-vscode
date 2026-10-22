@@ -3,6 +3,7 @@ import { MiniMaxProvider } from "./providers/MiniMaxProvider";
 import { MiniMaxAuthentication } from "./providers/MiniMaxAuthentication";
 import { TokenCounter } from "./utils/TokenCounter";
 import { registerGenerateCommitMessageCommand } from "./commands/generateCommitMessage";
+import { VENDOR_ID } from "./api/types";
 import {
   CONFIG_SECTION,
   VISIBLE_MODELS_KEY,
@@ -45,8 +46,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     provider,
-    vscode.lm.registerLanguageModelChatProvider("minimax", provider),
-    vscode.commands.registerCommand("minimax.refreshModels", async () => {
+    vscode.lm.registerLanguageModelChatProvider(VENDOR_ID, provider),
+    vscode.commands.registerCommand("minimaxAnthropic.refreshModels", async () => {
       await provider.refreshModels();
       vscode.window.showInformationMessage(
         "MiniMax: Model list refreshed from the API.",
@@ -99,13 +100,13 @@ export function activate(context: vscode.ExtensionContext): void {
         );
       }
     }),
-    vscode.commands.registerCommand("minimax.switchToGlobal", () =>
+    vscode.commands.registerCommand("minimaxAnthropic.switchToGlobal", () =>
       switchRegion("api.minimax.io", "Global API"),
     ),
-    vscode.commands.registerCommand("minimax.switchToChina", () =>
+    vscode.commands.registerCommand("minimaxAnthropic.switchToChina", () =>
       switchRegion("api.minimaxi.com", "Chinese API"),
     ),
-    vscode.commands.registerCommand("minimax.selectApiFormat", async () => {
+    vscode.commands.registerCommand("minimaxAnthropic.selectApiFormat", async () => {
       const current = getApiFormat();
       const picked = await vscode.window.showQuickPick(
         [
@@ -135,7 +136,7 @@ export function activate(context: vscode.ExtensionContext): void {
       provider.notifyModelsChanged();
       vscode.window.showInformationMessage(`MiniMax: Now using ${apiFormatLabel(picked.format)}.`);
     }),
-    vscode.commands.registerCommand("minimax.toggleThinking", async () => {
+    vscode.commands.registerCommand("minimaxAnthropic.toggleThinking", async () => {
       const next = !isThinkingEnabled();
       await setThinkingMode(next ? "adaptive" : "off");
       provider.notifyModelsChanged();
@@ -143,7 +144,7 @@ export function activate(context: vscode.ExtensionContext): void {
         `MiniMax: Thinking ${next ? "enabled" : "disabled"} for M3. M2.x models always emit thinking.`,
       );
     }),
-    vscode.commands.registerCommand("minimax.selectThinkingMode", async () => {
+    vscode.commands.registerCommand("minimaxAnthropic.selectThinkingMode", async () => {
       const current = getThinkingMode();
       const picked = await vscode.window.showQuickPick(
         (
@@ -177,7 +178,7 @@ export function activate(context: vscode.ExtensionContext): void {
         `MiniMax: Thinking set to ${thinkingModeLabel(picked.mode)}.`,
       );
     }),
-    vscode.commands.registerCommand("minimax.selectReasoningEffort", async () => {
+    vscode.commands.registerCommand("minimaxAnthropic.selectReasoningEffort", async () => {
       const current = getReasoningEffort();
       const options: { effort: ReasoningEffortSetting; label: string; description: string }[] = [
         {
@@ -217,7 +218,7 @@ export function activate(context: vscode.ExtensionContext): void {
         `MiniMax: Thinking depth set to ${reasoningEffortLabel(picked.effort)} (M3.1 Flash).`,
       );
     }),
-    vscode.commands.registerCommand("minimax.clearApiKey", async () => {
+    vscode.commands.registerCommand("minimaxAnthropic.clearApiKey", async () => {
       await authManager.deleteApiKey();
       provider.clearApiKeyCache();
       provider.notifyModelsChanged();

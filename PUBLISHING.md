@@ -10,17 +10,27 @@ the name is reserved forever, even if the extension is later removed.
 
 | Field | Current value | Notes |
 |---|---|---|
-| `publisher` | `denizhandaklr` | Must be a publisher **you control**. The `denizhandaklr` publisher is owned by the upstream project, so use your own publisher for this build. |
-| `name` | `minimax-vscode` | Must be unique across the Marketplace. `minimax-vscode` is taken by the upstream listing, so pick a different one (e.g. `minimax-anthropic`) if you want a separate listing. |
+| `publisher` | `ComfyChloe` | Must be a publisher **you control**. The upstream project owns `DenizhanDaklr`, so this build uses your own publisher. |
+| `name` | `minimax-anthropic` | Must be unique across the Marketplace. `minimax-vscode` is taken by the upstream listing, so this build uses `minimax-anthropic`. |
 | `displayName` | `MiniMax (Anthropic API)` | Also unique across the Marketplace. |
+
+The identity is already set to a free, Anthropic-focused listing:
+
+```
+ComfyChloe.minimax-anthropic   →  https://marketplace.visualstudio.com/items?itemName=ComfyChloe.minimax-anthropic
+```
 
 Two ways to list it:
 
-- **A separate listing** (recommended): set `publisher` to your own publisher and `name` to a new value.
-  Users who install the upstream extension keep it; yours is an additional, Anthropic-API-focused entry.
-- **The same listing**: keep `denizhandaklr.minimax-vscode`. Publishing then creates a new *version* of the
-  existing listing, and the upstream publisher's next release overwrites yours. Only do this with the
-  publisher owner's agreement.
+- **A separate listing** (what this build is set up for): `ComfyChloe.minimax-anthropic`. The upstream listing
+  stays as it is, and users can install either — or both, since this build registers its own model vendor id
+  (`minimax-anthropic`) and its own command ids (`minimaxAnthropic.*`).
+- **The same listing**: `DenizhanDaklr.minimax-vscode`. Publishing then creates a new *version* of the existing
+  listing, and the upstream publisher's next release overwrites yours. Only do this with the publisher owner's
+  agreement — it also needs their Azure DevOps PAT, not yours.
+
+> If your Microsoft account is not `ComfyChloe`, create a publisher with the right ID (step 2) and change
+> `publisher` in `package.json` **before** the first publish — the ID cannot be changed afterwards.
 
 ## 2. Create the publisher (once)
 
@@ -60,7 +70,7 @@ npm run publish      # vsce publish (runs the bundle via vscode:prepublish)
 ```
 
 `vsce publish` bumps nothing by itself: the version in `package.json` must be **higher** than the highest
-version already published for that extension id. `vsce publish 1.7.1` would set the version and publish in one
+version already published for that extension id. `vsce publish 1.8.1` would set the version and publish in one
 go.
 
 Prefer to review first:

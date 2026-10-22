@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.0 — Published as `ComfyChloe.minimax-anthropic`
+
+- The extension is now published under its own Marketplace identity, `ComfyChloe.minimax-anthropic` ("MiniMax (Anthropic API)"), by [ComfyChloe](https://github.com/ComfyChloe). The upstream listing `DenizhanDaklr.minimax-vscode` is untouched.
+- The model provider now registers the vendor id `minimax-anthropic` and the commands are namespaced `minimaxAnthropic.*`, so this extension and the original can be installed side by side without clashing in the model picker or the command palette.
+- README documents the new identity, the command ids, and how this build differs from the original.
+
 ## 1.7.0 — Anthropic-first
 
 - The Anthropic-compatible Messages API (`https://api.minimax.io/anthropic`) is now the default endpoint. The OpenAI-compatible Chat Completions API stays available as an alternative, and the active endpoint is shown next to every model in the picker.
