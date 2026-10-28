@@ -128,10 +128,12 @@ export class MiniMaxOpenAIClient implements MinimaxStreamClient {
     // Usage (final chunk with stream_options.include_usage).
     const usage = chunk.usage;
     if (usage && (usage.prompt_tokens || usage.completion_tokens)) {
+      const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
       yield {
         kind: "usage",
         inputTokens: usage.prompt_tokens,
         outputTokens: usage.completion_tokens,
+        ...(typeof cachedTokens === "number" ? { cachedTokens } : {}),
       };
     }
 

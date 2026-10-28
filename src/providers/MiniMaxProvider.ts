@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 import * as vscode from "vscode";
 import { MiniMaxError } from "../api/MiniMaxError";
 import {
+  MAX_CONTEXT_RETRIES,
+  isContextOverflowError,
+  truncateHistory,
+} from "../api/ContextOverflow";
+import {
   SUPPORTED_MODELS,
   fetchLiveModelCatalog,
   humanizeModelId,
@@ -326,9 +331,9 @@ export class MiniMaxProvider
     if (typeof text === "string") {
       return Promise.resolve(this.tokenCounter.estimateTokens(text));
     }
-    return Promise.resolve(
-      this.tokenCounter.estimatePayload(convertMessages([text])),
-    );
+    // The chat view compares this count against the model's budget to decide
+    // when to compact the conversation, so it must never be too low.
+    return Promise.resolve(this.tokenCounter.estimateMessage(text));
   }
 
   private async streamResponse(
@@ -346,11 +351,6 @@ export class MiniMaxProvider
 
     const thinkingPartCtor = getThinkingPartCtor();
     const inlineParser = new InlineThinkingParser();
-    const pendingToolCalls = new Map<number, AccumulatedToolCall>();
-    const emittedToolCallIndices = new Set<number>();
-    let pendingTrailingContent = "";
-    let usageInputTokens = 0;
-    let usageOutputTokens = 0;
     const tools = convertTools(options.tools);
 
     // Split system message out so the Anthropic adapter can put it in the
@@ -386,136 +386,171 @@ export class MiniMaxProvider
     );
 
     const client = this.createClient();
-    const stream = client.streamChat({
+    const request = {
       apiKey,
       model: resolveModelIdForApi(resolvedModel.id),
       maxTokens: resolveMaxTokens(options, resolvedModel),
       temperature: resolveTemperature(options),
       topP,
       tools,
-      toolChoice: toolChoice ?? "auto",
+      toolChoice: toolChoice ?? ("auto" as const),
       reasoningSplit: true,
       ...(reasoning.thinking ? { thinking: reasoning.thinking } : {}),
       ...(reasoning.effort ? { reasoningEffort: reasoning.effort } : {}),
       cancellationToken: token,
-      messages: nonSystemMessages,
       systemPrompt: systemParts.join("\n\n") || undefined,
-    });
+    };
 
-    for await (const event of stream) {
-      if (token.isCancellationRequested) {
-        return;
-      }
-      switch (event.kind) {
-        case "thinking": {
-          if (event.text && thinkingPartCtor) {
-            progress.report(
-              new thinkingPartCtor(event.text) as vscode.LanguageModelResponsePart,
-            );
-          } else if (event.text) {
-            progress.report(
-              new vscode.LanguageModelTextPart(`[thinking]${event.text}[/thinking]`),
-            );
+    // The chat view compacts the conversation when the prompt it counts
+    // exceeds the model's budget. If that estimate was still too low — or the
+    // window was hit by something we cannot see, such as a huge tool result —
+    // the API answers with a context-length error. Rather than failing the
+    // turn, retry with the oldest part of the history dropped.
+    let requestMessages = nonSystemMessages;
+    for (let attempt = 0; attempt <= MAX_CONTEXT_RETRIES; attempt++) {
+      const pendingToolCalls = new Map<number, AccumulatedToolCall>();
+      const emittedToolCallIndices = new Set<number>();
+      let pendingTrailingContent = "";
+      let usageInputTokens = 0;
+      let usageOutputTokens = 0;
+      let usageCachedTokens = 0;
+
+      try {
+        const stream = client.streamChat({
+          ...request,
+          messages: requestMessages,
+        });
+        for await (const event of stream) {
+          if (token.isCancellationRequested) {
+            return;
           }
-          break;
-        }
-        case "text": {
-          const { cleaned, thinking: inlineThinking } = inlineParser.feed(event.text);
-          if (inlineThinking && thinkingPartCtor) {
-            progress.report(
-              new thinkingPartCtor(inlineThinking) as vscode.LanguageModelResponsePart,
-            );
-          } else if (inlineThinking) {
-            progress.report(
-              new vscode.LanguageModelTextPart(`[thinking]${inlineThinking}[/thinking]`),
-            );
-          }
-          if (cleaned) {
-            // Buffer trailing content so a stray </think> arriving in a later event
-            // can be paired and discarded before the user sees it.
-            const combined = pendingTrailingContent + cleaned;
-            const strayClose = combined.indexOf("</think>");
-            if (strayClose !== -1) {
-              const safe = combined.slice(0, strayClose);
-              if (safe) {
-                progress.report(new vscode.LanguageModelTextPart(safe));
+          switch (event.kind) {
+            case "thinking": {
+              if (event.text && thinkingPartCtor) {
+                progress.report(
+                  new thinkingPartCtor(event.text) as vscode.LanguageModelResponsePart,
+                );
+              } else if (event.text) {
+                progress.report(
+                  new vscode.LanguageModelTextPart(`[thinking]${event.text}[/thinking]`),
+                );
               }
-              pendingTrailingContent = "";
-            } else {
-              pendingTrailingContent = combined;
+              break;
+            }
+            case "text": {
+              const { cleaned, thinking: inlineThinking } = inlineParser.feed(event.text);
+              if (inlineThinking && thinkingPartCtor) {
+                progress.report(
+                  new thinkingPartCtor(inlineThinking) as vscode.LanguageModelResponsePart,
+                );
+              } else if (inlineThinking) {
+                progress.report(
+                  new vscode.LanguageModelTextPart(`[thinking]${inlineThinking}[/thinking]`),
+                );
+              }
+              if (cleaned) {
+                // Buffer trailing content so a stray </think> arriving in a later event
+                // can be paired and discarded before the user sees it.
+                const combined = pendingTrailingContent + cleaned;
+                const strayClose = combined.indexOf("</think>");
+                if (strayClose !== -1) {
+                  const safe = combined.slice(0, strayClose);
+                  if (safe) {
+                    progress.report(new vscode.LanguageModelTextPart(safe));
+                  }
+                  pendingTrailingContent = "";
+                } else {
+                  pendingTrailingContent = combined;
+                }
+              }
+              break;
+            }
+            case "tool_use_start": {
+              const current: AccumulatedToolCall =
+                pendingToolCalls.get(event.index) ?? {
+                  index: event.index,
+                  arguments: "",
+                };
+              current.id = event.id;
+              current.name = event.name;
+              pendingToolCalls.set(event.index, current);
+              break;
+            }
+            case "tool_use_delta": {
+              const current: AccumulatedToolCall =
+                pendingToolCalls.get(event.index) ?? {
+                  index: event.index,
+                  arguments: "",
+                };
+              current.arguments += event.partialJson;
+              pendingToolCalls.set(event.index, current);
+              break;
+            }
+            case "tool_use_stop": {
+              const call = pendingToolCalls.get(event.index);
+              if (call) {
+                this.emitToolCall(progress, call, emittedToolCallIndices);
+              }
+              break;
+            }
+            case "content_block_start":
+              // Informational only on this path; nothing to do in the provider loop.
+              break;
+            case "usage": {
+              // Collect the real token usage so it can be reported once the
+              // stream is done, and learn the request-size ratio so the context
+              // estimate stays honest.
+              if (typeof event.inputTokens === "number") {
+                usageInputTokens = event.inputTokens;
+              }
+              if (typeof event.outputTokens === "number") {
+                usageOutputTokens = event.outputTokens;
+              }
+              if (typeof event.cachedTokens === "number") {
+                usageCachedTokens = event.cachedTokens;
+              }
+              break;
+            }
+            case "finish": {
+              this.emitToolCalls(progress, pendingToolCalls, emittedToolCallIndices);
+              break;
+            }
+            default: {
+              // Exhaustiveness check.
+              const _exhaustive: never = event;
+              void _exhaustive;
             }
           }
-          break;
         }
-        case "tool_use_start": {
-          const current: AccumulatedToolCall =
-            pendingToolCalls.get(event.index) ?? {
-              index: event.index,
-              arguments: "",
-            };
-          current.id = event.id;
-          current.name = event.name;
-          pendingToolCalls.set(event.index, current);
-          break;
+
+        // Flush any content buffered while waiting for a possible stray </think>.
+        if (pendingTrailingContent) {
+          progress.report(new vscode.LanguageModelTextPart(pendingTrailingContent));
         }
-        case "tool_use_delta": {
-          const current: AccumulatedToolCall =
-            pendingToolCalls.get(event.index) ?? {
-              index: event.index,
-              arguments: "",
-            };
-          current.arguments += event.partialJson;
-          pendingToolCalls.set(event.index, current);
-          break;
+
+        // Report the token usage of this request once the stream is complete.
+        if (usageInputTokens > 0 || usageOutputTokens > 0) {
+          this.reportUsage(
+            progress,
+            requestChars,
+            usageInputTokens,
+            usageOutputTokens,
+            usageCachedTokens,
+          );
         }
-        case "tool_use_stop": {
-          const call = pendingToolCalls.get(event.index);
-          if (call) {
-            this.emitToolCall(progress, call, emittedToolCallIndices);
-          }
-          break;
+        return;
+      } catch (error) {
+        const nextMessages = isContextOverflowError(error)
+          ? truncateHistory(requestMessages, attempt)
+          : undefined;
+        if (!nextMessages) {
+          throw error;
         }
-        case "content_block_start":
-          // Informational only on this path; nothing to do in the provider loop.
-          break;
-        case "usage": {
-          // Collect the real token usage so it can be reported once the
-          // stream is done, and learn the request-size ratio so the context
-          // estimate stays honest.
-          if (typeof event.inputTokens === "number") {
-            usageInputTokens = event.inputTokens;
-          }
-          if (typeof event.outputTokens === "number") {
-            usageOutputTokens = event.outputTokens;
-          }
-          break;
-        }
-        case "finish": {
-          this.emitToolCalls(progress, pendingToolCalls, emittedToolCallIndices);
-          break;
-        }
-        default: {
-          // Exhaustiveness check.
-          const _exhaustive: never = event;
-          void _exhaustive;
-        }
+        this.catalogOutput.appendLine(
+          `Context window exceeded — retrying with ${nextMessages.length} of ${requestMessages.length} messages.`,
+        );
+        requestMessages = nextMessages;
       }
-    }
-
-    // Flush any content buffered while waiting for a possible stray </think>.
-    if (pendingTrailingContent) {
-      progress.report(new vscode.LanguageModelTextPart(pendingTrailingContent));
-      pendingTrailingContent = "";
-    }
-
-    // Report the token usage of this request once the stream is complete.
-    if (usageInputTokens > 0 || usageOutputTokens > 0) {
-      this.reportUsage(
-        progress,
-        requestChars,
-        usageInputTokens,
-        usageOutputTokens,
-      );
     }
   }
 
@@ -533,12 +568,16 @@ export class MiniMaxProvider
   /**
    * Report the token usage of the request as a data part so the chat UI can
    * show it, and calibrate the request-size estimator with the real numbers.
+   *
+   * The payload follows the shape the chat view expects (`prompt_tokens`,
+   * `completion_tokens`, `total_tokens` and the cached-token breakdown).
    */
   private reportUsage(
     progress: vscode.Progress<vscode.LanguageModelResponsePart>,
     requestChars: number,
     inputTokens: number,
     outputTokens: number,
+    cachedTokens: number,
   ): void {
     if (inputTokens > 0) {
       this.tokenCounter.calibrate(requestChars, inputTokens);
@@ -550,6 +589,9 @@ export class MiniMaxProvider
       prompt_tokens: inputTokens,
       completion_tokens: outputTokens,
       total_tokens: inputTokens + outputTokens,
+      prompt_tokens_details: {
+        cached_tokens: cachedTokens,
+      },
     });
     const DataPartCtor = vscode.LanguageModelDataPart as unknown as new (
       data: Uint8Array,

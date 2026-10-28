@@ -57,6 +57,7 @@ The endpoint and thinking mode can be set three ways:
 | `minimax.apiBaseUrl` | `https://api.minimax.io/v1` | OpenAI-compatible base URL. Use `https://api.minimaxi.com/v1` in China. Ignored when `minimax.apiFormat` is `anthropic-compat`. |
 | `minimax.thinkingEnabled` | `true` | Sends `thinking: {type: "adaptive"}` (on) or `{type: "disabled"}` (off) for M3. M2.x and M3.1 Flash always emit thinking. |
 | `minimax.reasoningEffort` | `auto` | Fallback thinking depth when the model picker does not provide one: `auto`, `low`, `medium`, `high`, `xhigh`, `max`. `auto` leaves the field off the wire (endpoint default `max`). |
+| `minimax.contextSafetyMargin` | `0.15` | Safety margin on the token estimate used to detect that the conversation no longer fits the context window. `0.15` means the estimate is 15% above the real count. Raise it if requests still hit the context window, lower it to keep more of the window usable. |
 | `minimax.visibleModels` | all | Live model ids to show in the picker. Empty means every live model. `MiniMax-M3.1-Flash-Preview` is accepted as an alias for `MiniMax-M3.1-Flash`. |
 | `minimax.commitMessageGeneration.enabled` | `true` | Show the MiniMax sparkle in the SCM commit-message input. Disable to hide the inline button without uninstalling the extension. |
 
@@ -137,6 +138,18 @@ The picker shows the models your account can use (live list). The table below is
 
 > MiniMax is retiring the M2.5 / M2.7 families on November 18, 2026 (M2.1 and M2 are already retired). Token Plan requests to the M2.5 / M2.7 names are routed to M3.1 Flash until then.
 
+## Context window and compaction
+
+The chat view decides when to compact (summarize) a conversation by comparing the token count the provider reports against the model's budget, so the extension reports that count carefully:
+
+- The estimate is **never too low**: it counts images with the same tile formula the chat view uses, adds the tool call arguments and tool results, and is scaled up by `minimax.contextSafetyMargin` (15% by default). Under-reporting is what makes a request go out with a prompt that is already too long.
+- The ratio between characters and tokens is **learned from the API's own usage numbers**, so the estimate tracks the model and the payload mix (code vs prose) instead of guessing.
+- The token usage of each request is reported back, so the chat view's context indicator shows the real numbers.
+
+If a request still comes back with a context-window error (a huge tool result, or an estimate that was still too low), the extension does not fail the turn: it retries with the oldest part of the conversation dropped, up to three times, and logs what it did to **Output → MiniMax**.
+
+> Compaction itself is done by VS Code, not by the extension. It runs in agent mode; in plain chat mode the chat view has no compaction step, which is why the retry exists.
+
 ## Troubleshooting
 
 **The model picker is empty.** The catalog comes from the API, so it needs network access and a valid key. Check *Output → MiniMax* for the reason. If the endpoint is unreachable, the extension falls back to a static model list.
@@ -144,6 +157,8 @@ The picker shows the models your account can use (live list). The table below is
 **`400` errors mentioning `thinking`.** M3.1 Flash cannot run without reasoning. The extension never sends `thinking: disabled` for it; if you see this, the request came from a different client.
 
 **The context indicator looks off.** The input budget is the context window minus the output reservation (the Copilot BYOK convention), and the token estimate is calibrated from the real usage the API returns.
+
+**A request fails with a context-length error.** The chat view compacts the conversation when the prompt it counts exceeds the model's budget — but only in agent mode, and only if the count was right. The extension over-reports the count on purpose (`minimax.contextSafetyMargin`) and retries with a shorter history if the API still says the prompt is too long. Raise the margin if it keeps happening.
 
 ## Relationship to the original extension
 

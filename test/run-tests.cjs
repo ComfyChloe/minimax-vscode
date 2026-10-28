@@ -17,7 +17,10 @@ const bundle = esbuild.buildSync({
     contents: `export { MiniMaxProvider } from './src/providers/MiniMaxProvider';
       export { fetchLiveModelCatalog } from './src/api/types';
       export { getVisibleModels } from './src/utils/ModelConfig';
-      export { TokenCounter } from './src/utils/TokenCounter';`,
+      export { TokenCounter } from './src/utils/TokenCounter';
+      export { imageTokenCost } from './src/utils/ImageTokenCost';
+      export { isContextOverflowError, truncateHistory } from './src/api/ContextOverflow';
+      export { MiniMaxError } from './src/api/MiniMaxError';`,
     resolveDir: root,
   },
   bundle: true,
@@ -41,8 +44,36 @@ class EventEmitter {
     this.listeners = [];
   }
 }
+class LanguageModelTextPart {
+  constructor(value) {
+    this.value = value;
+  }
+}
+class LanguageModelToolCallPart {
+  constructor(callId, name, input) {
+    this.callId = callId;
+    this.name = name;
+    this.input = input;
+  }
+}
+class LanguageModelToolResultPart {
+  constructor(callId, content) {
+    this.callId = callId;
+    this.content = content;
+  }
+}
+class LanguageModelDataPart {
+  constructor(data, mimeType) {
+    this.data = data;
+    this.mimeType = mimeType;
+  }
+}
 const vscode = {
   EventEmitter,
+  LanguageModelTextPart,
+  LanguageModelToolCallPart,
+  LanguageModelToolResultPart,
+  LanguageModelDataPart,
   workspace: { getConfiguration: () => ({ get: (key) => config[key] }) },
   window: {
     createOutputChannel: () => ({
@@ -61,6 +92,8 @@ compiled.paths = module.paths;
 compiled.require = (id) => (id === "vscode" ? vscode : require(id));
 compiled._compile(bundle, compiled.filename);
 const { MiniMaxProvider, fetchLiveModelCatalog, getVisibleModels, TokenCounter } =
+  compiled.exports;
+const { imageTokenCost, isContextOverflowError, truncateHistory, MiniMaxError } =
   compiled.exports;
 
 const originalFetch = global.fetch;
@@ -431,4 +464,110 @@ test("M3.1 Flash offers the live effort levels in the picker and never an off sw
   assert.deepEqual(effort.enum, ["auto", "low", "medium", "high", "xhigh", "max"]);
   assert.equal(effort.default, "auto");
   assert.ok(!effort.enum.includes("off"), "M3.1 Flash cannot disable thinking");
+});
+
+test("a context-window error is recognised as such", () => {
+  const anthropicStyle = new MiniMaxError(
+    "prompt is too long: 1234567 tokens > 1000000 maximum",
+    "API_ERROR",
+    400,
+  );
+  const openaiStyle = new MiniMaxError(
+    "This model's maximum context length is 1000000 tokens",
+    "context_length_exceeded",
+    400,
+  );
+  const tooLarge = new MiniMaxError("Request body too large", "API_ERROR", 413);
+  const minimaxStyle = new MiniMaxError(
+    "Token limit exceeded. Please reduce the message length and try again.",
+    "1039",
+    400,
+  );
+  const unrelated = new MiniMaxError("Rate limit exceeded", "1002", 429);
+  const network = new Error("socket hang up");
+
+  assert.equal(isContextOverflowError(anthropicStyle), true);
+  assert.equal(isContextOverflowError(openaiStyle), true);
+  assert.equal(isContextOverflowError(tooLarge), true);
+  assert.equal(isContextOverflowError(minimaxStyle), true);
+  assert.equal(isContextOverflowError(unrelated), false);
+  assert.equal(isContextOverflowError(network), false);
+});
+
+test("a too-long history is trimmed from the front, without orphaning tool results", () => {
+  const messages = [
+    { role: "user", content: "one" },
+    { role: "assistant", content: "two" },
+    { role: "user", content: "three" },
+    { role: "assistant", content: "four" },
+    { role: "user", content: "five" },
+    { role: "assistant", content: "six" },
+  ];
+
+  const first = truncateHistory(messages, 0);
+  assert.equal(first.length, 4);
+  assert.deepEqual(first.map((m) => m.content), ["three", "four", "five", "six"]);
+
+  const second = truncateHistory(messages, 1);
+  assert.equal(second.length, 3);
+  assert.deepEqual(second.map((m) => m.content), ["four", "five", "six"]);
+
+  // A tool result whose tool call was cut off must not survive: the API
+  // rejects a history with an unmatched tool result.
+  const orphanedToolResult = [
+    { role: "assistant", content: "call" },
+    { role: "tool", tool_call_id: "1", content: "result" },
+    { role: "user", content: "three" },
+    { role: "assistant", content: "four" },
+  ];
+  const trimmed = truncateHistory(orphanedToolResult, 0);
+  assert.equal(trimmed[0].role, "user");
+  assert.ok(!trimmed.some((m) => m.role === "tool"));
+
+  // A tool result whose call is kept stays.
+  const pairedToolResult = [
+    { role: "user", content: "one" },
+    { role: "assistant", content: "call" },
+    { role: "tool", tool_call_id: "1", content: "result" },
+    { role: "user", content: "three" },
+  ];
+  const kept = truncateHistory(pairedToolResult, 0);
+  assert.ok(kept.some((m) => m.role === "tool"));
+
+  // Nothing left to drop.
+  assert.equal(truncateHistory([{ role: "user", content: "only" }], 0), undefined);
+});
+
+test("the token estimate counts images and keeps a safety margin", () => {
+  const counter = new TokenCounter();
+  const text = "x".repeat(4000);
+
+  // Plain text: about 1000 tokens, plus the margin.
+  const textTokens = counter.estimateTokens(text);
+  assert.ok(textTokens > 1000 && textTokens < 1200, `unexpected: ${textTokens}`);
+
+  // A 512x512 PNG is scaled to a 768px short side, so it covers 2x2 tiles:
+  // 4 * 170 + 85 tokens (the same formula the chat view uses).
+  const header = Buffer.alloc(26);
+  header.writeUInt32BE(0x89504e47, 0);
+  header.writeUInt32BE(13, 8);
+  header.write("IHDR", 12, "ascii");
+  header.writeUInt32BE(512, 16);
+  header.writeUInt32BE(512, 20);
+  const cost = imageTokenCost(new Uint8Array(header), "image/png");
+  assert.equal(cost, 4 * 170 + 85);
+
+  // A message with an image is not counted as if the image were free.
+  const message = {
+    role: 1,
+    content: [
+      new vscode.LanguageModelTextPart(text),
+      new vscode.LanguageModelDataPart(new Uint8Array(header), "image/png"),
+    ],
+  };
+  const messageTokens = counter.estimateMessage(message);
+  assert.ok(
+    messageTokens >= textTokens + cost,
+    `expected the image to add its cost: ${messageTokens} < ${textTokens} + ${cost}`,
+  );
 });

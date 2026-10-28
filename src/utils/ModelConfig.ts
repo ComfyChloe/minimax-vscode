@@ -24,6 +24,7 @@ export const API_BASE_URL_KEY = "apiBaseUrl";
 export const THINKING_ENABLED_KEY = "thinkingEnabled";
 export const THINKING_MODE_KEY = "thinkingMode";
 export const REASONING_EFFORT_KEY = "reasoningEffort";
+export const CONTEXT_SAFETY_MARGIN_KEY = "contextSafetyMargin";
 export const API_FORMAT_KEY = "apiFormat";
 export const ANTHROPIC_BASE_URL_KEY = "anthropicBaseUrl";
 export const DEFAULT_TEMPERATURE = 1;
@@ -328,6 +329,23 @@ export function apiFormatLabel(format: ApiFormat): string {
   return format === "anthropic-compat"
     ? "Anthropic API (Messages)"
     : "OpenAI API (Chat Completions)";
+}
+
+/**
+ * How much the token estimate is scaled up.
+ *
+ * The chat view decides when to compact the conversation by comparing the
+ * token count the provider reports against the model's budget. Under-reporting
+ * means the request goes out with a prompt that is already too long, so the
+ * estimate over-reports by this margin instead.
+ */
+export function getContextSafetyMargin(): number {
+  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+  const value = config.get<unknown>(CONTEXT_SAFETY_MARGIN_KEY);
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 0.5) {
+    return value;
+  }
+  return 0.15;
 }
 
 export async function setApiFormat(format: ApiFormat): Promise<void> {

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.8.1 — Context window and compaction
+
+- The token count the extension reports is no longer allowed to be too low, because that is what makes the chat view skip compaction and the request fail with a context-window error:
+  - images are counted with the same tile formula the chat view uses, instead of being counted as free once their base64 payload is stripped,
+  - the estimate is scaled up by a safety margin (`minimax.contextSafetyMargin`, 15% by default),
+  - the learned characters-per-token ratio is clamped, so one odd response cannot skew it.
+- A request that still comes back with a context-window error is retried with the oldest part of the conversation dropped (up to three times) instead of failing the turn. Tool results whose tool call was dropped are removed as well, so the API does not reject the history.
+- The reported usage now includes the cached-token breakdown the chat view expects, and the Anthropic path reports the cache-read tokens.
+
 ## 1.8.0 — Published as `ComfyChloe.minimax-anthropic`
 
 - The extension is now published under its own Marketplace identity, `ComfyChloe.minimax-anthropic` ("MiniMax (Anthropic API)"), by [ComfyChloe](https://github.com/ComfyChloe). The upstream listing `DenizhanDaklr.minimax-vscode` is untouched.

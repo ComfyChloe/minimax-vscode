@@ -12,7 +12,7 @@ export type NormalizedStreamEvent =
   | { kind: "tool_use_delta"; index: number; partialJson: string }
   | { kind: "tool_use_stop"; index: number }
   | { kind: "content_block_start"; index: number; blockType: "text" | "thinking" | "tool_use" }
-  | { kind: "usage"; inputTokens?: number; outputTokens?: number }
+  | { kind: "usage"; inputTokens?: number; outputTokens?: number; cachedTokens?: number }
   | { kind: "finish"; stopReason: string };
 
 /**

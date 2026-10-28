@@ -15,6 +15,7 @@ import {
   REASONING_EFFORT_KEY,
   apiFormatLabel,
   getApiFormat,
+  getContextSafetyMargin,
   getReasoningEffort,
   getThinkingMode,
   isThinkingEnabled,
@@ -31,7 +32,7 @@ import {
 
 export function activate(context: vscode.ExtensionContext): void {
   const authManager = new MiniMaxAuthentication(context.secrets);
-  const tokenCounter = new TokenCounter(context.globalState);
+  const tokenCounter = new TokenCounter(context.globalState, getContextSafetyMargin());
   const provider = new MiniMaxProvider(authManager, tokenCounter, context);
 
   const switchRegion = async (host: "api.minimax.io" | "api.minimaxi.com", label: string) => {

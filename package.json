@@ -2,7 +2,7 @@
   "name": "minimax-anthropic",
   "displayName": "MiniMax (Anthropic API)",
   "description": "Language model provider for GitHub Copilot in VS Code: use MiniMax text models through the Anthropic-compatible Messages API with a Token Plan API key. Does not add speech, video, or image generation APIs.",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "publisher": "ComfyChloe",
   "license": "MIT",
   "icon": "icon/icon.png",
@@ -138,6 +138,14 @@
           "default": true,
           "scope": "application",
           "markdownDescription": "Show the MiniMax sparkle in the Source Control view's title toolbar. Disable to remove the button without uninstalling the extension."
+        },
+        "minimax.contextSafetyMargin": {
+          "type": "number",
+          "default": 0.15,
+          "minimum": 0,
+          "maximum": 0.5,
+          "scope": "application",
+          "markdownDescription": "Safety margin on the token estimate used to detect that the conversation no longer fits the model's context window. The chat view compacts the conversation when the estimated prompt exceeds the model's budget, so the estimate is deliberately slightly too high. `0.15` means the estimate is 15% above the real count. Raise it if requests still hit the context window, lower it to keep more of the window usable."
         },
         "minimax.visibleModels": {
           "type": "array",
